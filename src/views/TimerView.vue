@@ -602,11 +602,14 @@ async function onSignOut() {
   font-size: 16px;
   font-weight: 700;
   cursor: pointer;
+  /* 松开时弹簧回弹（轻微过冲）——Apple 按钮手感的关键 */
   transition:
+    transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1),
     background 200ms ease,
     border-color 200ms ease,
-    transform 120ms var(--ease-glass),
-    opacity 160ms ease;
+    opacity 160ms ease,
+    box-shadow 240ms ease,
+    filter 200ms ease;
 }
 
 .timer-btn.primary {
@@ -661,8 +664,16 @@ html[data-theme="dark"] .timer-btn.success:hover:not(:disabled) {
   color: var(--text-primary);
 }
 
+/* 按压：快速缩下 + 阴影收紧，像按进玻璃里 */
 .timer-btn:active:not(:disabled) {
-  transform: scale(0.96);
+  transform: scale(0.95);
+  transition-duration: 110ms;
+  transition-timing-function: cubic-bezier(0.32, 0, 0.4, 1);
+}
+
+.timer-btn.primary:active:not(:disabled) {
+  box-shadow: 0 5px 14px rgba(10, 132, 255, 0.3);
+  filter: brightness(0.94);
 }
 
 .timer-btn:disabled {
