@@ -3,12 +3,13 @@
     <button
       type="button"
       class="icon-btn"
+      :class="{ 'icon-btn-compact': compact }"
       :aria-label="triggerLabel"
       :aria-expanded="open"
       aria-haspopup="menu"
       @click="open = !open"
     >
-      <component :is="triggerIcon" :size="19" :stroke-width="1.8" aria-hidden="true" />
+      <component :is="triggerIcon" :size="compact ? 15 : 19" :stroke-width="1.8" aria-hidden="true" />
     </button>
 
     <Transition name="tp">
@@ -35,6 +36,11 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Check, Moon, Sun, SunMoon } from 'lucide-vue-next'
 import { useTheme } from '../composables/useTheme'
+
+defineProps({
+  // Sticky Header 里的迷你尺寸
+  compact: { type: Boolean, default: false },
+})
 
 const { theme, resolvedTheme, setTheme } = useTheme()
 const open = ref(false)
@@ -82,6 +88,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .tp-wrap {
   position: relative;
+}
+
+.icon-btn-compact {
+  width: 30px;
+  height: 30px;
 }
 
 .tp-menu {

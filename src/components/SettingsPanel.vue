@@ -143,7 +143,7 @@ onBeforeUnmount(() => {
 .sp-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 1100;
   background: rgba(8, 10, 16, 0.32);
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
 
 .sp-panel {
   position: fixed;
-  z-index: 61;
+  z-index: 1101;
   padding: 16px 18px 18px;
   outline: none;
   background: var(--glass-bg-strong);

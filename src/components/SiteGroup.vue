@@ -12,7 +12,12 @@
       </span>
     </div>
 
-    <TagFilter v-if="tags.length > 1" v-model="selectedTag" :tags="tags" />
+    <TagFilter
+      v-if="tags.length > 1"
+      :model-value="activeTag"
+      :tags="tags"
+      @update:model-value="$emit('update:activeTag', $event)"
+    />
 
     <div class="group-grid">
       <SiteCard
@@ -27,7 +32,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import SiteCard from './SiteCard.vue'
 import TagFilter from './TagFilter.vue'
 
@@ -35,9 +40,11 @@ const props = defineProps({
   group: { type: Object, required: true },
   index: { type: Number, default: 0 },
   animate: { type: Boolean, default: false },
+  // 分类状态由 HomeView 统一持有（页面内头部与 Sticky 头部共享，按模块独立记忆）
+  activeTag: { type: String, default: null },
 })
 
-const selectedTag = ref(null)
+const emit = defineEmits(['update:activeTag'])
 
 const tags = computed(() => {
   const seen = new Set()
@@ -53,13 +60,13 @@ const tags = computed(() => {
   return out
 })
 
-watch(tags, (list) => {
-  if (selectedTag.value && !list.includes(selectedTag.value)) selectedTag.value = null
+watch([tags, () => props.activeTag], ([list, tag]) => {
+  if (tag && !list.includes(tag)) emit('update:activeTag', null)
 })
 
 const visibleItems = computed(() =>
-  selectedTag.value
-    ? props.group.items.filter((it) => (it.tags || []).includes(selectedTag.value))
+  props.activeTag
+    ? props.group.items.filter((it) => (it.tags || []).includes(props.activeTag))
     : props.group.items,
 )
 
