@@ -1,7 +1,7 @@
 <template>
   <div class="auth-wrap">
     <div class="auth-card glass">
-      <span class="auth-eyebrow">Dada Workspace</span>
+      <span class="auth-eyebrow">Wstudio Workspace</span>
       <h2 class="auth-title">{{ mode === 'status' ? '查询审批状态' : mode === 'register' ? '创建账号' : '登录' }}</h2>
       <p class="auth-desc">{{ mode === 'status' ? '输入用户名查看注册申请的审批进度' : '登录后即可使用打卡与计时功能' }}</p>
 

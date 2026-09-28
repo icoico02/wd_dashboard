@@ -1,9 +1,9 @@
 {
-  "name": "dada-dashboard",
+  "name": "wstudio-dashboard",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Dada Dashboard — 个人项目与工具的统一入口，Apple 磨砂玻璃风格",
+  "description": "Wstudio Dashboard — 个人项目与工具的统一入口，Apple 磨砂玻璃风格",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

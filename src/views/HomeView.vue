@@ -38,8 +38,8 @@
     </main>
 
     <footer class="site-footer" :class="{ reveal: !ready }" style="--reveal-delay: 260ms">
-      <span class="footer-eyebrow">Dada</span>
-      <span class="footer-title">Dada Dashboard</span>
+      <span class="footer-eyebrow">Wstudio</span>
+      <span class="footer-title">Wstudio Dashboard</span>
       <span class="footer-meta">Self-hosted · Cloudflare · {{ year }}</span>
     </footer>
   </div>

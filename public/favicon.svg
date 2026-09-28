@@ -8,5 +8,5 @@
   </defs>
   <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#g)"/>
   <rect x="4" y="4" width="56" height="56" rx="16" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.5"/>
-  <text x="32" y="43" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', sans-serif" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">D</text>
+  <text x="32" y="43" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', sans-serif" font-size="30" font-weight="700" fill="#ffffff" text-anchor="middle">W</text>
 </svg>

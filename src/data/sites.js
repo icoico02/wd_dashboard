@@ -1,5 +1,5 @@
 /**
- * Dada Dashboard — 项目配置
+ * Wstudio Dashboard — 项目配置
  *
  * 新增 / 修改项目只需要编辑本文件：
  *

@@ -1,4 +1,4 @@
-# Dada Dashboard
+# Wstudio Dashboard
 
 > 我的个人项目、Web App、开发工具、AI 实验和常用服务的统一入口。
 >

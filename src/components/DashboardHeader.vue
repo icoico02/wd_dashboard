@@ -1,7 +1,7 @@
 <template>
   <header class="dash-header">
     <div class="brand">
-      <span class="brand-eyebrow">Dada</span>
+      <span class="brand-eyebrow">Wstudio</span>
       <h1 class="brand-title">Dashboard</h1>
       <p class="brand-sub">我的项目与常用工具</p>
     </div>
