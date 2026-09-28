@@ -30,23 +30,33 @@ npm run preview   # 本地预览生产构建
 
 ## 部署到 Cloudflare Pages
 
+本仓库已含 `wrangler.jsonc`（Workers 静态资产配置，`assets.directory` 指向 `dist`），两种方式都可以：
+
 ### 方式一：连接 Git 仓库（推荐，push 自动部署）
 
-1. 把本项目推送到 GitHub / GitLab
-2. Cloudflare Dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**，选择仓库
+1. 把本项目推送到 GitHub / GitLab（本仓库已推送至 `icoico02/wd_dashboard`）
+2. Cloudflare Dashboard → **Workers 和 Pages** → **Create**（选 **Workers** 标签，连接 Git 仓库）
 3. 构建配置：
-   - **Framework preset**: `Vue`
-   - **Build command**: `npm run build`
-   - **Build output directory**: `dist`
-4. **Save and Deploy**，之后每次 push 自动重新部署
+   - **构建命令**: `npm run build`
+   - **部署命令**: `npx wrangler deploy`
+   - **根目录**: `/`
+4. 保存后自动构建部署，之后每次 push 到 `main` 自动重新部署
 
-### 方式二：Wrangler CLI 直接上传
+### 方式二：经典 Pages 项目
+
+Workers 和 Pages → **Create** → **Pages** 标签 → 连接仓库：
+
+- **Framework preset**: `Vue`
+- **Build command**: `npm run build`
+- **Build output directory**: `dist`
+
+### 方式三：Wrangler CLI 直接上传
 
 ```bash
 npm i -g wrangler
 wrangler login
 npm run build
-wrangler pages deploy dist --project-name dada-dashboard
+npx wrangler deploy
 ```
 
 之后绑定自定义域名即可（Pages 项目 → Custom domains）。
