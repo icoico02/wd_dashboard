@@ -6,81 +6,90 @@
     :user-email="authUser?.email || ''"
     @sign-out="onSignOut"
   >
-    <div v-if="!isConfigured" class="state-card glass">
-      <span class="state-icon"><Settings :size="24" aria-hidden="true" /></span>
-      <h2 class="state-title">尚未配置 Supabase</h2>
-      <p class="state-desc">计时记录保存在 Supabase。在项目根目录创建 <code>.env.local</code> 并填入 <code>VITE_SUPABASE_URL</code> 与 <code>VITE_SUPABASE_PUBLISHABLE_KEY</code>，可复用 workTime 已有的 Supabase 项目。</p>
+    <!-- 游客 / 未配置 Supabase 提示条 -->
+    <div v-if="!authUser" class="guest-banner glass-subtle">
+      <span class="guest-dot" aria-hidden="true"></span>
+      <p class="guest-text">
+        <template v-if="isConfigured">游客模式：计时记录仅保存在本机浏览器，登录后自动改存云端。</template>
+        <template v-else>未配置 Supabase：计时记录仅保存在本机浏览器。</template>
+      </p>
+      <button v-if="isConfigured" type="button" class="guest-login" @click="loginOpen = true">登录</button>
     </div>
 
-    <div v-else-if="authLoading" class="state-card glass">
-      <p class="state-desc">正在检查登录状态…</p>
-    </div>
+    <section class="hero glass">
+      <p class="timer-display">
+        <span class="timer-main">{{ displayParts.main }}</span>
+        <span class="timer-ms">.{{ displayParts.ms }}</span>
+      </p>
+      <p class="timer-hint">{{ timerHint }}</p>
 
-    <AuthPanel v-else-if="!authUser" />
+      <div class="timer-actions">
+        <button type="button" class="timer-btn primary" @click="toggleRun">
+          <component :is="timerRunning ? Pause : Play" :size="19" aria-hidden="true" />
+          {{ timerRunning ? '暂停' : timerSessionStartedAt && !timerSessionSaved ? '继续' : '开始' }}
+        </button>
+        <button
+          type="button"
+          class="timer-btn success"
+          :disabled="!timerSessionStartedAt || timerSessionSaved"
+          @click="endTimer"
+        >
+          <Save :size="18" aria-hidden="true" />结束并保存
+        </button>
+        <button type="button" class="timer-btn" :disabled="timerRunning || timerElapsedMs === 0" @click="resetTimer">
+          <RotateCcw :size="17" aria-hidden="true" />重置
+        </button>
+      </div>
+    </section>
 
-    <template v-else>
-      <section class="hero glass">
-        <p class="timer-display">
-          <span class="timer-main">{{ displayParts.main }}</span>
-          <span class="timer-ms">.{{ displayParts.ms }}</span>
-        </p>
-        <p class="timer-hint">{{ timerHint }}</p>
+    <section class="history">
+      <div class="history-head">
+        <h2 class="section-title">计时记录</h2>
+        <button
+          type="button"
+          class="delete-selected"
+          :disabled="!selectedIds.length"
+          @click="requestDeleteTimerRecords(selectedIds)"
+        >
+          <Trash2 :size="14" aria-hidden="true" />删除所选{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
+        </button>
+      </div>
 
-        <div class="timer-actions">
-          <button type="button" class="timer-btn primary" @click="toggleRun">
-            <component :is="timerRunning ? Pause : Play" :size="19" aria-hidden="true" />
-            {{ timerRunning ? '暂停' : timerSessionStartedAt && !timerSessionSaved ? '继续' : '开始' }}
-          </button>
-          <button
-            type="button"
-            class="timer-btn success"
-            :disabled="!timerSessionStartedAt || timerSessionSaved"
-            @click="endTimer"
-          >
-            <Save :size="18" aria-hidden="true" />结束并保存
-          </button>
-          <button type="button" class="timer-btn" :disabled="timerRunning || timerElapsedMs === 0" @click="resetTimer">
-            <RotateCcw :size="17" aria-hidden="true" />重置
-          </button>
-        </div>
-      </section>
+      <div v-if="historyLoading" class="history-empty glass-subtle"><p>正在加载记录…</p></div>
+      <div v-else-if="!timerHistory.length" class="history-empty glass-subtle">
+        <p>还没有计时记录，按「开始」跑一段试试。</p>
+      </div>
 
-      <section class="history">
-        <div class="history-head">
-          <h2 class="section-title">计时记录</h2>
-          <button
-            type="button"
-            class="delete-selected"
-            :disabled="!selectedIds.length"
-            @click="requestDeleteTimerRecords(selectedIds)"
-          >
-            <Trash2 :size="14" aria-hidden="true" />删除所选{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}
-          </button>
-        </div>
-
-        <div v-if="historyLoading" class="history-empty glass-subtle"><p>正在加载记录…</p></div>
-        <div v-else-if="!timerHistory.length" class="history-empty glass-subtle">
-          <p>还没有计时记录，按「开始」跑一段试试。</p>
-        </div>
-
-        <ul v-else class="history-list">
-          <li v-for="record in timerHistory" :key="record.id" class="history-row glass" :class="{ selected: selectedIds.includes(record.id) }">
-            <label class="row-check">
-              <input
-                type="checkbox"
-                :checked="selectedIds.includes(record.id)"
-                @change="toggleSelected(record.id)"
-              />
-            </label>
-            <div class="row-info">
-              <span class="row-range">{{ formatRecordDate(record.start_time) }} {{ formatRecordTime(record.start_time) }} → {{ formatRecordTime(record.end_time) }}</span>
-            </div>
-            <span class="row-duration">{{ formatStoredDuration(record) }}</span>
-          </li>
-        </ul>
-      </section>
-    </template>
+      <ul v-else class="history-list">
+        <li
+          v-for="record in timerHistory"
+          :key="record.id"
+          class="history-row glass"
+          :class="{ selected: selectedIds.includes(record.id) }"
+        >
+          <label class="row-check">
+            <input
+              type="checkbox"
+              :checked="selectedIds.includes(record.id)"
+              @change="toggleSelected(record.id)"
+            />
+          </label>
+          <div class="row-info">
+            <span class="row-range">
+              {{ formatRecordDate(record.start_time) }} {{ formatRecordTime(record.start_time) }} →
+              {{ formatRecordTime(record.end_time) }}
+            </span>
+          </div>
+          <span class="row-duration">{{ formatStoredDuration(record) }}</span>
+        </li>
+      </ul>
+    </section>
   </FeatureShell>
+
+  <!-- 登录弹窗：游客随时可以登录切到云端记录 -->
+  <GlassDialog :open="loginOpen" title="登录后同步到云端" @close="loginOpen = false">
+    <AuthPanel />
+  </GlassDialog>
 
   <GlassDialog :open="deleteConfirm.show" title="删除所选记录？" width="360px" @close="deleteConfirm.show = false">
     <p class="dialog-text">将删除 {{ deleteConfirm.ids.length }} 条计时记录，删除后无法恢复。</p>
@@ -93,7 +102,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { Pause, Play, RotateCcw, Save, Settings, Trash2 } from 'lucide-vue-next'
+import { Pause, Play, RotateCcw, Save, Trash2 } from 'lucide-vue-next'
 import AuthPanel from '../components/AuthPanel.vue'
 import FeatureShell from '../components/FeatureShell.vue'
 import GlassDialog from '../components/GlassDialog.vue'
@@ -103,6 +112,9 @@ import { supabase } from '../lib/supabase'
 
 const { authLoading, authUser, isConfigured, signOut } = useAuth()
 const { showToast } = useToast()
+
+const ACTIVE_KEY = 'dada-dashboard:active-timer'
+const LOCAL_HISTORY_KEY = 'dada-dashboard:local-timer-records'
 
 /* --------------------------------- 计时状态 --------------------------------- */
 const timerRunning = ref(false)
@@ -116,10 +128,7 @@ const timerHistory = ref([])
 const historyLoading = ref(false)
 const selectedIds = ref([])
 const deleteConfirm = reactive({ show: false, ids: [] })
-
-const activeTimerStorageKey = computed(() =>
-  authUser.value ? `dada-dashboard:active-timer:${authUser.value.id}` : '',
-)
+const loginOpen = ref(false)
 
 const displayParts = computed(() => {
   const totalMs = Math.max(0, Math.floor(timerElapsedMs.value))
@@ -152,16 +161,13 @@ function startInterval() {
 }
 
 function persistSession() {
-  const key = activeTimerStorageKey.value
-  if (!key) return
-
   if (!timerSessionStartedAt.value || timerSessionSaved.value) {
-    localStorage.removeItem(key)
+    localStorage.removeItem(ACTIVE_KEY)
     return
   }
 
   localStorage.setItem(
-    key,
+    ACTIVE_KEY,
     JSON.stringify({
       sessionStartedAt: timerSessionStartedAt.value,
       timerStartedAt: timerStartedAt.value,
@@ -173,11 +179,8 @@ function persistSession() {
 }
 
 function restoreSession() {
-  const key = activeTimerStorageKey.value
-  if (!key) return
-
   try {
-    const session = JSON.parse(localStorage.getItem(key) || 'null')
+    const session = JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null')
     const sessionStartedAt = Number(session?.sessionStartedAt)
     const elapsedMs = Math.max(0, Number(session?.elapsedMs || 0))
 
@@ -197,7 +200,7 @@ function restoreSession() {
       startInterval()
     }
   } catch {
-    localStorage.removeItem(key)
+    localStorage.removeItem(ACTIVE_KEY)
   }
 }
 
@@ -209,7 +212,7 @@ function clearSession() {
   timerSessionSaved.value = false
   clearInterval(intervalId)
   intervalId = null
-  if (activeTimerStorageKey.value) localStorage.removeItem(activeTimerStorageKey.value)
+  localStorage.removeItem(ACTIVE_KEY)
 }
 
 function toggleRun() {
@@ -234,7 +237,7 @@ function toggleRun() {
   startInterval()
 }
 
-async function endTimer() {
+function endTimer() {
   if (!timerSessionStartedAt.value) {
     showToast('请先开始计时')
     return
@@ -244,7 +247,7 @@ async function endTimer() {
   timerRunning.value = false
   clearInterval(intervalId)
   intervalId = null
-  await saveRecord()
+  saveRecord()
 }
 
 function resetTimer() {
@@ -258,6 +261,23 @@ function resetTimer() {
 }
 
 /* --------------------------------- 记录存取 --------------------------------- */
+/* 登录 → Supabase 云端；游客 / 未配置 → 本机 localStorage，字段结构与云端一致 */
+function readLocalRecords() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY)) || []
+  } catch {
+    return []
+  }
+}
+
+function writeLocalRecords(records) {
+  try {
+    localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(records.slice(0, 200)))
+  } catch {
+    /* 存储空间不足等场景静默失败 */
+  }
+}
+
 function timerSaveErrorMessage(error) {
   const detail = `${error?.code || ''} ${error?.message || ''}`.toLowerCase()
 
@@ -270,23 +290,46 @@ function timerSaveErrorMessage(error) {
   return '记录保存失败，请检查网络后重试。'
 }
 
-async function saveRecord(pending) {
-  if (!supabase || !authUser.value) return false
-
+function saveRecord(pending) {
   const record =
     pending || {
-      user_id: authUser.value.id,
+      id: crypto.randomUUID(),
+      user_id: authUser.value?.id || null,
       start_time: new Date(timerSessionStartedAt.value).toISOString(),
       end_time: new Date().toISOString(),
       total_milliseconds: Math.floor(timerElapsedMs.value),
       total_seconds: Math.floor(timerElapsedMs.value / 1000),
+      created_at: new Date().toISOString(),
     }
 
-  const { error } = await supabase.from('timer_records').insert(record)
+  if (supabase && authUser.value) {
+    const { id, ...cloudRecord } = record
+    return saveCloudRecord(cloudRecord)
+  }
+
+  writeLocalRecords([record, ...readLocalRecords()])
+  timerSessionSaved.value = true
+  clearSession()
+  loadHistory()
+  showToast('记录已保存到本机')
+  return true
+}
+
+async function saveCloudRecord(cloudRecord) {
+  const { error } = await supabase.from('timer_records').insert(cloudRecord)
 
   if (error) {
     console.error('保存计时记录失败:', error)
-    showToast(timerSaveErrorMessage(error), { actionLabel: '重试', onAction: () => saveRecord(record) })
+    showToast(timerSaveErrorMessage(error), {
+      actionLabel: '存到本机',
+      onAction: () => {
+        writeLocalRecords([{ ...cloudRecord, id: crypto.randomUUID() }, ...readLocalRecords()])
+        timerSessionSaved.value = true
+        clearSession()
+        loadHistory()
+        showToast('记录已保存到本机')
+      },
+    })
     return false
   }
 
@@ -323,7 +366,8 @@ function formatRecordDate(value) {
 
 async function loadHistory() {
   if (!supabase || !authUser.value) {
-    timerHistory.value = []
+    timerHistory.value = readLocalRecords()
+    historyLoading.value = false
     return
   }
 
@@ -360,17 +404,21 @@ function requestDeleteTimerRecords(ids) {
 
 async function confirmDeleteTimerRecords() {
   const ids = deleteConfirm.ids
-  if (!supabase || !authUser.value || !ids.length) return
+  if (!ids.length) return
 
-  const { error } = await supabase
-    .from('timer_records')
-    .delete()
-    .in('id', ids)
-    .eq('user_id', authUser.value.id)
+  if (supabase && authUser.value) {
+    const { error } = await supabase
+      .from('timer_records')
+      .delete()
+      .in('id', ids)
+      .eq('user_id', authUser.value.id)
 
-  if (error) {
-    showToast('删除计时记录失败，请检查网络后重试。')
-    return
+    if (error) {
+      showToast('删除计时记录失败，请检查网络后重试。')
+      return
+    }
+  } else {
+    writeLocalRecords(readLocalRecords().filter((record) => !ids.includes(record.id)))
   }
 
   deleteConfirm.show = false
@@ -394,23 +442,17 @@ function onVisibilityChange() {
   syncElapsed()
 }
 
-watch(authUser, (user) => {
-  if (user) {
-    restoreSession()
-    loadHistory()
-  } else {
-    timerHistory.value = []
-    selectedIds.value = []
-  }
+watch(authUser, () => {
+  loginOpen.value = false
+  selectedIds.value = []
+  loadHistory()
 })
 
 onMounted(() => {
   window.addEventListener('pagehide', onPageHide)
   document.addEventListener('visibilitychange', onVisibilityChange)
-  if (authUser.value) {
-    restoreSession()
-    loadHistory()
-  }
+  restoreSession()
+  loadHistory()
 })
 
 onBeforeUnmount(() => {
@@ -425,42 +467,56 @@ async function onSignOut() {
   syncElapsed()
   persistSession()
   await signOut()
+  loadHistory()
 }
 </script>
 
 <style scoped>
-.state-card {
-  border-radius: var(--radius-xl);
-  padding: 44px 32px;
+.guest-banner {
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 10px;
-  text-align: center;
+  padding: 11px 16px;
+  border-radius: 14px;
+  margin-bottom: 16px;
 }
 
-.state-icon {
-  width: 54px;
-  height: 54px;
-  border-radius: 17px;
-  display: grid;
-  place-items: center;
+.guest-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff9500;
+  box-shadow: 0 0 6px rgba(255, 149, 0, 0.5);
+  flex: 0 0 auto;
+}
+
+.guest-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
   color: var(--text-secondary);
-  background: var(--glass-bg-subtle);
-  border: 1px solid var(--glass-border);
-  margin-bottom: 4px;
 }
 
-.state-title {
-  font-size: 17px;
+.guest-login {
+  flex: 0 0 auto;
+  padding: 6px 16px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+  transition: filter 160ms ease, transform 120ms var(--ease-glass);
 }
 
-.state-desc {
-  font-size: 13.5px;
-  color: var(--text-secondary);
-  max-width: 460px;
+.guest-login:hover {
+  filter: brightness(1.06);
+}
+
+.guest-login:active {
+  transform: scale(0.95);
 }
 
 .hero {
@@ -523,7 +579,10 @@ async function onSignOut() {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   cursor: pointer;
-  transition: background 200ms ease, transform 120ms var(--ease-glass), opacity 160ms ease;
+  transition:
+    background 200ms ease,
+    transform 120ms var(--ease-glass),
+    opacity 160ms ease;
 }
 
 .timer-btn.primary {
@@ -583,7 +642,9 @@ async function onSignOut() {
   font-weight: 600;
   color: #e0483e;
   cursor: pointer;
-  transition: opacity 160ms ease, background 200ms ease;
+  transition:
+    opacity 160ms ease,
+    background 200ms ease;
 }
 
 .delete-selected:disabled {
@@ -619,7 +680,9 @@ async function onSignOut() {
   gap: 14px;
   padding: 12px 18px;
   border-radius: var(--radius-lg);
-  transition: border-color 160ms ease, background 160ms ease;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
 .history-row.selected {
