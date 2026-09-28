@@ -24,21 +24,30 @@
       <p class="timer-hint">{{ timerHint }}</p>
 
       <div class="timer-actions">
-        <button type="button" class="timer-btn primary" @click="toggleRun">
-          <component :is="timerRunning ? Pause : Play" :size="19" aria-hidden="true" />
-          {{ timerRunning ? '暂停' : timerSessionStartedAt && !timerSessionSaved ? '继续' : '开始' }}
-        </button>
-        <button
-          type="button"
-          class="timer-btn success"
-          :disabled="!timerSessionStartedAt || timerSessionSaved"
-          @click="endTimer"
-        >
-          <Save :size="18" aria-hidden="true" />结束并保存
-        </button>
-        <button type="button" class="timer-btn" :disabled="timerRunning || timerElapsedMs === 0" @click="resetTimer">
-          <RotateCcw :size="17" aria-hidden="true" />重置
-        </button>
+        <div class="action-row-main">
+          <button type="button" class="timer-btn primary" @click="toggleRun">
+            <component :is="timerRunning ? Pause : Play" :size="20" aria-hidden="true" />
+            {{ timerRunning ? '暂停计时' : timerSessionStartedAt && !timerSessionSaved ? '继续计时' : '开始计时' }}
+          </button>
+        </div>
+        <div class="action-row-sub">
+          <button
+            type="button"
+            class="timer-btn success"
+            :disabled="!timerSessionStartedAt || timerSessionSaved"
+            @click="endTimer"
+          >
+            <Save :size="17" aria-hidden="true" />结束并保存
+          </button>
+          <button
+            type="button"
+            class="timer-btn neutral"
+            :disabled="timerRunning || timerElapsedMs === 0"
+            @click="resetTimer"
+          >
+            <RotateCcw :size="16" aria-hidden="true" />重置
+          </button>
+        </div>
       </div>
     </section>
 
@@ -147,7 +156,7 @@ const timerHint = computed(() => {
   if (timerRunning.value) return '计时中…'
   if (timerSessionSaved.value) return '本段已保存，可直接开始下一段'
   if (timerSessionStartedAt.value && timerElapsedMs.value > 0) return '已暂停，可继续或结束保存'
-  return '按下「开始」启动计时，刷新页面也不会丢'
+  return '按下「开始计时」启动计时，刷新页面也不会丢'
 })
 
 function syncElapsed() {
@@ -555,52 +564,101 @@ async function onSignOut() {
 }
 
 .timer-actions {
-  margin-top: 24px;
+  margin-top: 26px;
+  width: 100%;
+  max-width: 340px;
+  margin-left: auto;
+  margin-right: auto;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   gap: 12px;
-  flex-wrap: wrap;
+}
+
+.action-row-main {
+  display: flex;
+}
+
+.action-row-sub {
+  display: flex;
+  gap: 12px;
+}
+
+.action-row-sub .timer-btn {
+  flex: 1;
+  min-width: 0;
 }
 
 .timer-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  min-width: 136px;
-  height: 50px;
-  padding: 0 22px;
-  border: 1px solid var(--glass-border);
+  width: 100%;
+  height: 56px;
+  padding: 0 18px;
+  border: none;
   border-radius: 999px;
   font: inherit;
-  font-size: 14.5px;
+  font-size: 16px;
   font-weight: 700;
-  color: var(--text-primary);
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   cursor: pointer;
   transition:
     background 200ms ease,
+    border-color 200ms ease,
     transform 120ms var(--ease-glass),
     opacity 160ms ease;
 }
 
 .timer-btn.primary {
+  color: #fff;
   background: linear-gradient(180deg, #3f9bff, #0a7aff);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 10px 26px rgba(10, 132, 255, 0.4);
+  box-shadow: 0 12px 28px rgba(10, 132, 255, 0.42);
 }
 
+/* 淡绿色玻璃 */
 .timer-btn.success {
-  background: linear-gradient(180deg, #43d063, #2eb350);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 10px 26px rgba(52, 199, 89, 0.38);
+  height: 48px;
+  font-size: 14px;
+  color: #1d8a41;
+  background: rgba(52, 199, 89, 0.14);
+  border: 1px solid rgba(52, 199, 89, 0.35);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
-.timer-btn:hover:not(:disabled) {
+html[data-theme="dark"] .timer-btn.success {
+  color: #66d489;
+  background: rgba(52, 199, 89, 0.16);
+  border-color: rgba(52, 199, 89, 0.4);
+}
+
+/* 灰色低权重玻璃 */
+.timer-btn.neutral {
+  height: 48px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.timer-btn.primary:hover:not(:disabled) {
   filter: brightness(1.06);
+}
+
+.timer-btn.success:hover:not(:disabled) {
+  background: rgba(52, 199, 89, 0.24);
+}
+
+html[data-theme="dark"] .timer-btn.success:hover:not(:disabled) {
+  background: rgba(52, 199, 89, 0.26);
+}
+
+.timer-btn.neutral:hover:not(:disabled) {
+  background: var(--glass-bg-hover);
+  color: var(--text-primary);
 }
 
 .timer-btn:active:not(:disabled) {
@@ -718,12 +776,6 @@ async function onSignOut() {
 @media (max-width: 640px) {
   .hero {
     padding: 30px 16px 24px;
-  }
-
-  .timer-btn {
-    flex: 1;
-    min-width: 104px;
-    padding: 0 12px;
   }
 }
 </style>
