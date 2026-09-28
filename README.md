@@ -71,6 +71,8 @@ npx wrangler deploy
   name: "我的应用",                 // 名称
   description: "一句话描述",        // 描述（可搜索）
   icon: "Rocket",                  // 任意 Lucide 图标名，见 https://lucide.dev/icons
+  logo: "auto",                    // 可选。真实网站 logo（不填则显示 icon 图标）：
+                                   //   "auto" 按域名自动抓 favicon；或图片 URL / 本地路径 "/logos/xx.png"
   accent: "blue",                  // 图标底色：blue | purple | cyan | teal | green | orange | pink | indigo | slate
   tags: ["工具", "效率"],           // 标签（可搜索、用于组内筛选）
   url: "https://example.com",      // 默认地址
@@ -80,6 +82,11 @@ npx wrangler deploy
   enabled: true,                   // false 可临时隐藏
 }
 ```
+
+**真实 logo（贴图）**：给项目加 `logo` 字段即可像 BLNF 一样显示真实网站图标——
+- `logo: "auto"`：自动抓取 `url` 域名的 favicon（图源由 `sites.js` 顶部的 `FAVICON_API` 控制，国内可换成 `https://api.iowen.cn/favicon/{domain}.png`）
+- `logo: "https://..."` 或 `logo: "/logos/xxx.svg"`：指定图片，本地图片放在 `public/logos/` 目录
+- logo 加载失败自动回退到 Lucide 图标；logo 会显示在白色小底板上，明暗主题下都清晰
 
 **地址解析逻辑**：内网模式取 `internalUrl → url → externalUrl`，外网模式取 `externalUrl → url → internalUrl`；卡片始终新标签页打开（`target="_blank" rel="noopener noreferrer"`）。
 

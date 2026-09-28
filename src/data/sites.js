@@ -14,7 +14,13 @@
  *   description  一句话描述
  *   icon         Lucide 图标名（任意 Lucide 图标，如 "Send" / "Database"，
  *                未匹配时显示通用图标；全部图标见 https://lucide.dev/icons）
- *   accent       图标底色：blue | purple | cyan | teal | green | orange | pink | indigo
+ *   logo         可选。真实网站 logo（像 BLNF 那样的贴图）：
+ *                  - 图片 URL 或本地路径，如 "https://cdn.simpleicons.org/github"
+ *                    或 "/logos/github.svg"（图片放 public/logos/ 下）
+ *                  - "auto"：按 url 的域名自动抓取 favicon（用下面的 FAVICON_API）
+ *                  - 不填：显示 icon 字段的 Lucide 图标
+ *                logo 加载失败会自动回退到 icon 图标
+ *   accent       图标底色：blue | purple | cyan | teal | green | orange | pink | indigo | slate
  *   tags         标签数组（搜索与分组内 Tag 筛选都基于它）
  *   url          默认地址
  *   internalUrl  内网地址（内网模式优先使用）
@@ -22,6 +28,10 @@
  *   status       online | development | experimental | offline
  *   enabled      设为 false 可临时隐藏该项目
  */
+
+/** logo: "auto" 时的 favicon 图源，{domain} 会被替换成项目 url 的域名。
+ *  国内网络可换成：https://api.iowen.cn/favicon/{domain}.png */
+export const FAVICON_API = 'https://favicon.im/{domain}?larger=true'
 
 export const groups = [
   {
@@ -104,6 +114,7 @@ export const groups = [
         name: 'GitHub Drive',
         description: '基于仓库的文件存储',
         icon: 'FolderGit2',
+        logo: 'https://cdn.simpleicons.org/github',
         accent: 'slate',
         tags: ['开发', 'GitHub'],
         url: '#',
@@ -181,6 +192,7 @@ export const groups = [
         name: 'ServiceNow Lab',
         description: 'ServiceNow 二次开发实验',
         icon: 'CloudCog',
+        logo: 'https://favicon.im/servicenow.com?larger=true',
         accent: 'teal',
         tags: ['ServiceNow', 'Cloudflare'],
         url: '#',
@@ -194,6 +206,7 @@ export const groups = [
         name: 'AWS Serverless',
         description: 'Lambda 与无服务架构练习',
         icon: 'Server',
+        logo: 'https://favicon.im/aws.amazon.com?larger=true',
         accent: 'orange',
         tags: ['AWS', '开发'],
         url: '#',
@@ -207,6 +220,7 @@ export const groups = [
         name: 'Supabase Lab',
         description: 'Supabase 数据库与认证实验',
         icon: 'Database',
+        logo: 'https://cdn.simpleicons.org/supabase',
         accent: 'green',
         tags: ['Supabase', '开发'],
         url: '#',

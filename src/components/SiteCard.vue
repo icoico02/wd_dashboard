@@ -11,8 +11,21 @@
     @pointermove="onMove"
   >
     <div class="card-top">
-      <span class="icon-tile" :class="site.accent ? `accent-${site.accent}` : null">
-        <component :is="iconComp" :size="22" :stroke-width="1.8" aria-hidden="true" />
+      <span
+        class="icon-tile"
+        :class="[site.accent ? `accent-${site.accent}` : null, { 'has-logo': logoUrl && !logoFailed }]"
+      >
+        <img
+          v-if="logoUrl && !logoFailed"
+          class="tile-logo"
+          :src="logoUrl"
+          alt=""
+          loading="lazy"
+          decoding="async"
+          referrerpolicy="no-referrer"
+          @error="logoFailed = true"
+        />
+        <component v-else :is="iconComp" :size="22" :stroke-width="1.8" aria-hidden="true" />
       </span>
       <ArrowUpRight class="card-arrow" :size="18" :stroke-width="2" aria-hidden="true" />
     </div>
@@ -32,8 +45,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ArrowUpRight, icons } from 'lucide-vue-next'
+import { FAVICON_API } from '../data/sites'
 import { resolveUrl, useNetworkMode } from '../composables/useNetworkMode'
 
 const props = defineProps({
@@ -49,6 +63,30 @@ const href = computed(() => resolveUrl(props.site, mode.value))
 const iconComp = computed(
   () => (props.site.icon && icons[props.site.icon]) || icons.AppWindow,
 )
+
+const logoFailed = ref(false)
+
+watch(
+  () => props.site.logo,
+  () => {
+    logoFailed.value = false
+  },
+)
+
+const logoUrl = computed(() => {
+  const l = props.site.logo
+  if (!l) return ''
+  if (l === 'auto') {
+    try {
+      const target = props.site.internalUrl || props.site.url || props.site.externalUrl || ''
+      const host = new URL(target).hostname
+      return FAVICON_API.replace('{domain}', host)
+    } catch {
+      return ''
+    }
+  }
+  return l
+})
 
 const STATUS_LABELS = {
   online: '在线',

@@ -406,6 +406,29 @@ html[data-theme="dark"] .accent-orange { --acc-fg: #ffa94d; --acc-a: rgba(255, 1
 html[data-theme="dark"] .accent-pink   { --acc-fg: #ff7d9d; --acc-a: rgba(255, 55, 95, 0.26);  --acc-b: rgba(255, 55, 95, 0.12); }
 html[data-theme="dark"] .accent-indigo { --acc-fg: #9a98f2; --acc-a: rgba(88, 86, 214, 0.3);   --acc-b: rgba(88, 86, 214, 0.14); }
 
+/* 有真实 logo 时：底座变成白色小面板（类似 App Store 白底图标），保证任何品牌色在明暗主题下都清晰 */
+.icon-tile.has-logo {
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    inset 0 0 0 1px rgba(35, 45, 70, 0.08),
+    0 3px 10px var(--acc-glow);
+}
+
+html[data-theme="dark"] .icon-tile.has-logo {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    0 3px 10px var(--acc-glow);
+}
+
+.tile-logo {
+  width: 27px;
+  height: 27px;
+  border-radius: 6px;
+  object-fit: contain;
+  display: block;
+}
+
 html[data-card-size="compact"] .icon-tile {
   width: 40px;
   height: 40px;
