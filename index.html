@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Dada Dashboard — 我的个人项目、Web App、开发工具、AI 实验和常用服务的统一入口。" />
+    <meta name="theme-color" content="#edf0f6" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Dada Dashboard</title>
+    <script>
+      // 首帧前解析主题，避免暗色模式下白屏闪烁
+      ;(function () {
+        try {
+          var t = localStorage.getItem('dada-dashboard:theme') || 'system'
+          var dark =
+            t === 'dark' ||
+            (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          var theme = dark ? 'dark' : 'light'
+          document.documentElement.dataset.theme = theme
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', dark ? '#0b0c10' : '#edf0f6')
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
