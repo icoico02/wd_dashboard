@@ -4,9 +4,10 @@
     <div class="orb orb-purple"></div>
     <div class="orb orb-teal"></div>
   </div>
-  <HomeView />
+  <router-view />
+  <AppToast />
 </template>
 
 <script setup>
-import HomeView from './views/HomeView.vue'
+import AppToast from './components/AppToast.vue'
 </script>

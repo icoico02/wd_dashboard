@@ -3,10 +3,10 @@
     class="site-card glass"
     :class="{ reveal: animate }"
     :href="href"
-    target="_blank"
-    rel="noopener noreferrer"
+    :target="isInternal ? null : '_blank'"
+    :rel="isInternal ? null : 'noopener noreferrer'"
     :style="{ '--reveal-delay': delay }"
-    :aria-label="`${site.name}（在新标签页打开）`"
+    :aria-label="isInternal ? site.name : `${site.name}（在新标签页打开）`"
     @click="onClick"
     @pointermove="onMove"
   >
@@ -46,6 +46,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ArrowUpRight, icons } from 'lucide-vue-next'
 import { FAVICON_API } from '../data/sites'
 import { resolveUrl, useNetworkMode } from '../composables/useNetworkMode'
@@ -56,9 +57,11 @@ const props = defineProps({
   animate: { type: Boolean, default: false },
 })
 
+const router = useRouter()
 const { mode } = useNetworkMode()
 
 const href = computed(() => resolveUrl(props.site, mode.value))
+const isInternal = computed(() => href.value.startsWith('/'))
 
 const iconComp = computed(
   () => (props.site.icon && icons[props.site.icon]) || icons.AppWindow,
@@ -112,6 +115,10 @@ function onMove(e) {
 
 function onClick(e) {
   if (href.value === '#') e.preventDefault()
+  else if (isInternal.value) {
+    e.preventDefault()
+    router.push(href.value)
+  }
 }
 </script>
 

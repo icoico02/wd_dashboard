@@ -436,6 +436,129 @@ html[data-card-size="compact"] .icon-tile {
 }
 
 /* --------------------------------------------------------------------------
+   功能页共享：弹窗表单 / 按钮
+   -------------------------------------------------------------------------- */
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dialog-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialog-form .field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.dialog-form .field input {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-subtle);
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--text-primary);
+  outline: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+  color-scheme: inherit;
+}
+
+.dialog-form .field input:focus {
+  background: var(--glass-bg-strong);
+  border-color: var(--glass-border-bright);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.dialog-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-plain {
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-subtle);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.btn-plain:hover {
+  background: var(--glass-bg-hover);
+  color: var(--text-primary);
+}
+
+.btn-primary {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 6px 18px rgba(10, 132, 255, 0.32);
+  cursor: pointer;
+  transition: filter 160ms ease, transform 120ms var(--ease-glass);
+}
+
+.btn-primary:hover {
+  filter: brightness(1.06);
+}
+
+.btn-primary:active {
+  transform: scale(0.96);
+}
+
+.btn-danger {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(180deg, #ff6b5e, #e0483e);
+  box-shadow: 0 6px 18px rgba(224, 72, 62, 0.32);
+  cursor: pointer;
+  transition: filter 160ms ease, transform 120ms var(--ease-glass);
+}
+
+.btn-danger:hover {
+  filter: brightness(1.05);
+}
+
+.btn-danger:active {
+  transform: scale(0.96);
+}
+
+/* --------------------------------------------------------------------------
    状态小圆点 —— 克制：dot + 文字，不做大 Badge
    -------------------------------------------------------------------------- */
 .status {

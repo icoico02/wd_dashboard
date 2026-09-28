@@ -19,6 +19,27 @@
 - **动效系统**：入场 fade + stagger（封顶延迟）、`prefers-reduced-motion` 与设置内动画开关均可关闭
 - **性能克制**：仅 3 个 `radial-gradient` 背景光球（无大尺寸 `filter: blur` DOM）、无 Canvas / WebGL / 粒子
 
+## 功能页（玻璃风重写自 workTime）
+
+打卡与计时不再是外链，而是 Dashboard 内置的功能页（`vue-router` + Supabase）：
+
+| 路由 | 功能 | 说明 |
+| --- | --- | --- |
+| `/` | 导航首页 | 搜索 / 分组 / 内外网切换 |
+| `/checkin` | 上下班打卡 | 大时钟、签到签退、今日工时实时计算、历史记录、补卡 / 编辑 / 删除 |
+| `/timer` | 计时器 | 毫秒级大表盘、启停保存、刷新不丢进度、历史多选删除 |
+
+**Supabase 配置**（签到 / 计时的数据后端，与 workTime 同一套表结构和账号体系，可共用同一项目）：
+
+```bash
+cp .env.example .env.local   # 填入 VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY
+```
+
+- 未配置时页面显示引导状态，不影响首页浏览
+- 登录沿用 workTime 规则：**用户名 + 密码**（内部映射 `用户名@attendance.local`），注册后需管理员在 `profiles.approval_status` 中审批
+- 复用 workTime 的 Supabase 项目无需执行任何 SQL；全新项目需执行 `supabase/attendance_records.sql`（打卡表）与 workTime 仓库的 `supabase/timer_records.sql`（计时表）
+- Cloudflare Pages 部署时在项目 **Settings → 环境变量** 里配置同样两个变量
+
 ## 快速开始
 
 ```bash
@@ -107,17 +128,28 @@ src/
 │   ├── SearchBar.vue         # 大型磨砂搜索框，⌘K / Ctrl+K，ESC 清空
 │   ├── NetworkSwitch.vue     # 内网/外网 iOS Segmented Control
 │   ├── SiteGroup.vue         # 分组标题 + 数量胶囊 + Tag 行 + 卡片网格
-│   ├── SiteCard.vue          # 玻璃项目卡片（Icon 底座/状态/Hover/柔光）
+│   ├── SiteCard.vue          # 玻璃项目卡片（logo/状态/Hover/柔光，支持内部路由）
 │   ├── TagFilter.vue         # 组内 Tag 胶囊筛选，横向滚动
 │   ├── ThemePopover.vue      # macOS 风格主题菜单
-│   └── SettingsPanel.vue     # 设置：桌面 Popover / 手机 Bottom Sheet
+│   ├── SettingsPanel.vue     # 设置：桌面 Popover / 手机 Bottom Sheet
+│   ├── FeatureShell.vue      # 功能页外壳（返回 / 标题 / 用户）
+│   ├── AuthPanel.vue         # 登录 / 注册 / 审批查询（玻璃风）
+│   ├── GlassDialog.vue       # 通用玻璃弹窗（桌面居中 / 手机底部弹出）
+│   └── AppToast.vue          # 全局玻璃 Toast
 ├── composables/
 │   ├── useTheme.js           # 主题解析 + 系统偏好监听
 │   ├── useSettings.js        # 卡片尺寸 / 动画开关
-│   └── useNetworkMode.js     # 内外网模式 + 地址解析
+│   ├── useNetworkMode.js     # 内外网模式 + 地址解析
+│   ├── useAuth.js            # Supabase 认证（登录/注册/审批，移植自 workTime）
+│   └── useToast.js           # 全局 Toast
+├── lib/supabase.js           # Supabase 客户端（会话可切换本地/临时存储）
 ├── data/sites.js             # ★ 所有项目配置
-├── views/HomeView.vue        # 页面组装 + 搜索过滤 + Empty State + Footer
-├── App.vue                   # 背景光球层
+├── views/
+│   ├── HomeView.vue          # 导航首页
+│   ├── CheckInView.vue       # 上下班打卡（玻璃风重写）
+│   └── TimerView.vue         # 计时器（玻璃风重写）
+├── router.js                 # / · /checkin · /timer
+├── App.vue                   # 背景光球层 + 路由出口 + Toast
 ├── main.js
 └── style.css                 # Apple Glass 设计系统（Design Tokens）
 ```
