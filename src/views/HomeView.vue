@@ -28,6 +28,7 @@
           :index="i"
           :animate="!ready"
           :active-tag="sectionTags[g.id] ?? null"
+          :hide-tags="!!query"
           @update:active-tag="setSectionTag(g.id, $event)"
         />
       </template>
@@ -55,40 +56,63 @@
   <!-- 统一 Section Sticky Header：品牌/搜索固定行 + 随模块切换的内容行 -->
   <Transition name="sticky-head">
     <div v-if="stickyVisible" class="sticky-layer">
-      <div class="sticky-panel">
+      <div class="sticky-panel" :class="{ 'is-search': searchFocused }">
         <div class="sticky-top">
-          <span class="sticky-brand">Wstudio</span>
+          <button
+            v-if="searchFocused"
+            type="button"
+            class="sticky-btn"
+            aria-label="返回"
+            @mousedown.prevent
+            @click="exitSearch"
+          >
+            <ArrowLeft :size="16" aria-hidden="true" />
+          </button>
+          <span v-else class="sticky-brand">Wstudio</span>
           <SearchBar
             v-model="query"
             compact
-            placeholder="搜索..."
+            placeholder="搜索项目、工具或标签..."
             class="sticky-search"
+            @focus="onStickyFocus"
+            @blur="onStickyBlur"
           />
-          <div class="sticky-actions">
+          <button
+            v-if="searchFocused"
+            type="button"
+            class="sticky-cancel"
+            @mousedown.prevent
+            @click="cancelSearch"
+          >
+            取消
+          </button>
+          <div v-else class="sticky-actions">
             <ThemePopover compact />
             <button type="button" class="sticky-btn" aria-label="设置" @click="settingsOpen = true">
               <Settings :size="15" aria-hidden="true" />
             </button>
           </div>
         </div>
-        <div class="sticky-clip">
-          <Transition :name="pushName">
-            <div v-if="activeSection" :key="activeSection.id" class="sticky-content">
-              <div class="sticky-sec-row">
-                <h2 class="sticky-title">{{ activeSection.title }}</h2>
-                <span class="sticky-count" :aria-label="`${stickyCount} 个项目`">
-                  {{ stickyCount }}
-                </span>
-                <TagFilter
-                  class="sticky-tags"
-                  :tags="collectTags(activeSection.items)"
-                  :model-value="sectionTags[activeSection.id] ?? null"
-                  @update:model-value="setSectionTag(activeSection.id, $event)"
-                />
+        <Transition name="sf-fade">
+          <div v-if="!searchFocused" class="sticky-clip">
+            <Transition :name="pushName">
+              <div v-if="activeSection" :key="activeSection.id" class="sticky-content">
+                <div class="sticky-sec-row">
+                  <h2 class="sticky-title">{{ activeSection.title }}</h2>
+                  <span class="sticky-count" :aria-label="`${stickyCount} 个项目`">
+                    {{ stickyCount }}
+                  </span>
+                  <TagFilter
+                    class="sticky-tags"
+                    :tags="collectTags(activeSection.items)"
+                    :model-value="sectionTags[activeSection.id] ?? null"
+                    @update:model-value="setSectionTag(activeSection.id, $event)"
+                  />
+                </div>
               </div>
-            </div>
-          </Transition>
-        </div>
+            </Transition>
+          </div>
+        </Transition>
       </div>
     </div>
   </Transition>
@@ -98,7 +122,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { SearchX, Settings } from 'lucide-vue-next'
+import { ArrowLeft, SearchX, Settings } from 'lucide-vue-next'
 import DashboardHeader from '../components/DashboardHeader.vue'
 import NetworkSwitch from '../components/NetworkSwitch.vue'
 import SearchBar from '../components/SearchBar.vue'
@@ -173,6 +197,36 @@ function setSectionTag(id, tag) {
 const activeId = ref(null)
 const stickyVisible = ref(false)
 const pushName = ref('sh-down')
+
+/* Search Focus Mode：搜索框聚焦后顶部收成单行搜索栏 */
+const searchFocused = ref(false)
+let blurTimer = null
+
+function onStickyFocus() {
+  clearTimeout(blurTimer)
+  searchFocused.value = true
+}
+
+function onStickyBlur() {
+  // 延迟退出，给「取消 / 返回」按钮留出点击窗口
+  clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => {
+    searchFocused.value = false
+  }, 180)
+}
+
+function exitSearch() {
+  clearTimeout(blurTimer)
+  searchFocused.value = false
+  document.activeElement?.blur?.()
+}
+
+function cancelSearch() {
+  clearTimeout(blurTimer)
+  query.value = ''
+  searchFocused.value = false
+  document.activeElement?.blur?.()
+}
 
 const activeSection = computed(
   () => filteredGroups.value.find((g) => g.id === activeId.value) || null,
@@ -276,6 +330,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', requestUpdate)
   window.removeEventListener('resize', onResize)
+  clearTimeout(blurTimer)
 })
 
 watch(filteredGroups, () => {
@@ -367,6 +422,12 @@ watch(filteredGroups, () => {
   backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  transition: height 240ms var(--ease-glass);
+}
+
+/* Search Focus Mode：顶部收成单行搜索栏 */
+.sticky-panel.is-search {
+  height: 62px;
 }
 
 /* 第一行：品牌 + 搜索 + 操作，固定不参与模块切换动画 */
@@ -484,6 +545,29 @@ watch(filteredGroups, () => {
 
 .sticky-btn:active {
   transform: scale(0.92);
+}
+
+.sticky-cancel {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* Focus Mode 淡出 / 淡入 */
+.sf-fade-enter-active,
+.sf-fade-leave-active {
+  transition: opacity 160ms ease;
+}
+
+.sf-fade-enter-from,
+.sf-fade-leave-to {
+  opacity: 0;
 }
 
 /* 面板整体滑入 / 滑出 */

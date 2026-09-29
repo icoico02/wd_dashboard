@@ -13,7 +13,7 @@
     </div>
 
     <TagFilter
-      v-if="tags.length > 1"
+      v-if="!hideTags && tags.length > 1"
       :model-value="activeTag"
       :tags="tags"
       @update:model-value="$emit('update:activeTag', $event)"
@@ -42,6 +42,8 @@ const props = defineProps({
   animate: { type: Boolean, default: false },
   // 分类状态由 HomeView 统一持有（页面内头部与 Sticky 头部共享，按模块独立记忆）
   activeTag: { type: String, default: null },
+  // 搜索过程中隐藏分类栏（结果直接跨模块展示）
+  hideTags: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:activeTag'])

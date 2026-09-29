@@ -11,6 +11,8 @@
       spellcheck="false"
       @input="onInput"
       @keydown.esc.stop="onEsc"
+      @focus="$emit('focus')"
+      @blur="$emit('blur')"
     />
     <kbd v-if="!compact" class="search-kbd">⌘ K</kbd>
   </div>
@@ -27,7 +29,7 @@ const props = defineProps({
   placeholder: { type: String, default: '搜索项目、工具或标签...' },
 })
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'focus', 'blur'])
 const input = ref(null)
 
 function onInput(e) {
@@ -146,8 +148,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
 }
 
 .search-compact:focus-within {
+  /* 柔和聚焦：1px 半透明蓝边 + 小范围 glow，不用粗 ring */
+  border-color: rgba(10, 132, 255, 0.5);
   box-shadow:
-    0 0 0 3px var(--accent-soft),
-    inset 0 1px 0 var(--glass-highlight);
+    0 0 0 1px rgba(10, 132, 255, 0.28),
+    0 0 14px var(--accent-soft);
+}
+
+/* Search Focus Mode 下搜索框加高 */
+.is-search .search-compact {
+  height: 44px;
+  border-radius: 13px;
+  font-size: 15px;
+}
+
+.is-search .search-compact input {
+  font-size: 15px;
 }
 </style>
