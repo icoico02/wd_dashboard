@@ -52,21 +52,35 @@
   <!-- 供 JS 读取 env(safe-area-inset-top) 的探针 -->
   <div ref="probeRef" class="safe-probe" aria-hidden="true"></div>
 
-  <!-- 统一 Section Sticky Header：内容随 activeSection 数据驱动切换 -->
+  <!-- 统一 Section Sticky Header：品牌/搜索固定行 + 随模块切换的内容行 -->
   <Transition name="sticky-head">
     <div v-if="stickyVisible" class="sticky-layer">
       <div class="sticky-panel">
+        <div class="sticky-top">
+          <span class="sticky-brand">Wstudio</span>
+          <SearchBar
+            v-model="query"
+            compact
+            placeholder="搜索..."
+            class="sticky-search"
+          />
+          <div class="sticky-actions">
+            <ThemePopover compact />
+            <button type="button" class="sticky-btn" aria-label="设置" @click="settingsOpen = true">
+              <Settings :size="15" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
         <div class="sticky-clip">
           <Transition :name="pushName">
             <div v-if="activeSection" :key="activeSection.id" class="sticky-content">
-              <div class="sticky-row1">
+              <div class="sticky-sec-row">
                 <h2 class="sticky-title">{{ activeSection.title }}</h2>
                 <span class="sticky-count" :aria-label="`${stickyCount} 个项目`">
                   {{ stickyCount }}
                 </span>
-              </div>
-              <div class="sticky-row2">
                 <TagFilter
+                  class="sticky-tags"
                   :tags="collectTags(activeSection.items)"
                   :model-value="sectionTags[activeSection.id] ?? null"
                   @update:model-value="setSectionTag(activeSection.id, $event)"
@@ -74,12 +88,6 @@
               </div>
             </div>
           </Transition>
-        </div>
-        <div class="sticky-actions">
-          <ThemePopover compact />
-          <button type="button" class="sticky-btn" aria-label="设置" @click="settingsOpen = true">
-            <Settings :size="15" aria-hidden="true" />
-          </button>
         </div>
       </div>
     </div>
@@ -347,8 +355,12 @@ watch(filteredGroups, () => {
 .sticky-panel {
   pointer-events: auto;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
   width: min(100%, calc(var(--page-max) - 2 * var(--page-pad)));
-  height: 92px;
+  height: 98px;
+  padding: 9px 12px;
   border-radius: 22px;
   background: var(--glass-bg-strong);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
@@ -357,9 +369,41 @@ watch(filteredGroups, () => {
   box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
 }
 
+/* 第一行：品牌 + 搜索 + 操作，固定不参与模块切换动画 */
+.sticky-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.sticky-brand {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sticky-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.sticky-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .sticky-clip {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1;
+  min-height: 0;
   border-radius: inherit;
   overflow: hidden;
 }
@@ -367,23 +411,22 @@ watch(filteredGroups, () => {
 .sticky-content {
   position: absolute;
   inset: 0;
-  padding: 10px 14px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
 }
 
-.sticky-row1 {
+.sticky-sec-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 28px;
-  padding-right: 76px;
+  width: 100%;
   min-width: 0;
 }
 
 .sticky-title {
-  font-size: 16.5px;
+  flex: 0 1 auto;
+  max-width: 34%;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-primary);
@@ -403,7 +446,8 @@ watch(filteredGroups, () => {
   border: 1px solid var(--glass-border);
 }
 
-.sticky-row2 {
+.sticky-tags {
+  flex: 1;
   min-width: 0;
 }
 
@@ -418,16 +462,6 @@ watch(filteredGroups, () => {
   backdrop-filter: none;
   padding: 6px 13px;
   font-size: 13px;
-}
-
-.sticky-actions {
-  position: absolute;
-  top: 9px;
-  right: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 3;
 }
 
 .sticky-btn {
@@ -593,8 +627,14 @@ watch(filteredGroups, () => {
     padding-right: 14px;
   }
 
-  .sticky-content {
-    padding: 9px 12px;
+  .sticky-panel {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .sticky-brand {
+    letter-spacing: 0.12em;
+    font-size: 10.5px;
   }
 }
 </style>

@@ -1,18 +1,18 @@
 <template>
-  <div class="search glass">
-    <Search class="search-icon" :size="18" :stroke-width="2" aria-hidden="true" />
+  <div class="search glass" :class="{ 'search-compact': compact }">
+    <Search class="search-icon" :size="compact ? 15 : 18" :stroke-width="2" aria-hidden="true" />
     <input
       ref="input"
       :value="modelValue"
       type="text"
-      placeholder="搜索项目、工具或标签..."
-      aria-label="搜索项目、工具或标签"
+      :placeholder="placeholder"
+      :aria-label="placeholder"
       autocomplete="off"
       spellcheck="false"
       @input="onInput"
       @keydown.esc.stop="onEsc"
     />
-    <kbd class="search-kbd">⌘ K</kbd>
+    <kbd v-if="!compact" class="search-kbd">⌘ K</kbd>
   </div>
 </template>
 
@@ -22,6 +22,9 @@ import { Search } from 'lucide-vue-next'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
+  // Sticky Header 紧凑变体
+  compact: { type: Boolean, default: false },
+  placeholder: { type: String, default: '搜索项目、工具或标签...' },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -39,8 +42,15 @@ function onEsc() {
 function onGlobalKey(e) {
   if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 'k') {
     e.preventDefault()
-    input.value?.focus()
-    input.value?.select()
+    // 多个搜索框并存（首页 + Sticky 面板）时，聚焦当前视口内可见的那个
+    const inputs = [...document.querySelectorAll('.search input')]
+    const visible = inputs.find((el) => {
+      const r = el.getBoundingClientRect()
+      return r.width > 0 && r.top < window.innerHeight && r.bottom > 0
+    })
+    const target = visible || input.value
+    target?.focus()
+    target?.select()
   }
 }
 
@@ -117,5 +127,27 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKey))
   .search-kbd {
     display: none;
   }
+}
+
+/* Sticky Header 紧凑变体 */
+.search-compact {
+  height: 36px;
+  border-radius: 11px;
+  padding: 0 10px;
+  gap: 8px;
+}
+
+.search-compact input {
+  font-size: 14px;
+}
+
+.search-compact input::placeholder {
+  font-size: 13px;
+}
+
+.search-compact:focus-within {
+  box-shadow:
+    0 0 0 3px var(--accent-soft),
+    inset 0 1px 0 var(--glass-highlight);
 }
 </style>
