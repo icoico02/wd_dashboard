@@ -8,11 +8,22 @@ import { AUTH_STORAGE_KEY, authStorage, isSupabaseConfigured, supabase } from '.
  * - 「记住此设备」切换 localStorage / sessionStorage 会话
  */
 
-const authLoading = ref(true)
-const authUser = ref(null)
-const userProfile = ref(null)
-const gateMessage = ref('')
-const registering = ref(false)
+/**
+ * 认证状态挂到 window 单例注册表：某些打包场景下懒加载 chunk 会复制模块，
+ * 产生第二份模块状态（曾导致进销存页登录态分裂），挂到 window 保证全局唯一。
+ */
+function createAuthState() {
+  return {
+    authLoading: ref(true),
+    authUser: ref(null),
+    userProfile: ref(null),
+    gateMessage: ref(''),
+    registering: ref(false),
+  }
+}
+
+const S = (window.__dadaAuthState ||= createAuthState())
+const { authLoading, authUser, userProfile, gateMessage, registering } = S
 
 const isAdmin = computed(() => ['admin', 'super_admin'].includes(userProfile.value?.role))
 const isSuperAdmin = computed(() => userProfile.value?.role === 'super_admin')
@@ -93,6 +104,20 @@ function migrateSessionToStorage(mode) {
 }
 
 export function useAuth() {
+  if (typeof window !== 'undefined') {
+    window.__authDebug = {
+      get state() {
+        return {
+          authLoading: authLoading.value,
+          hasUser: !!authUser.value,
+          role: userProfile.value?.role || null,
+          gate: gateMessage.value || null,
+          initialized,
+          configured: isSupabaseConfigured,
+        }
+      },
+    }
+  }
   initAuth()
 
   async function signIn(username, password, remember = true) {
