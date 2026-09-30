@@ -16,6 +16,7 @@ import * as local from '../lib/inventoryLocal'
 const products = ref([])
 const orders = ref([])
 const movements = ref([])
+const returns = ref([])
 const loading = ref(false)
 const loaded = ref(false)
 const orgSetupNeeded = ref(false)
@@ -31,8 +32,29 @@ function mapProduct(p) {
     salePrice: Number(p.sale_price || 0),
     costPrice: Number(p.cost_price || 0),
     stock: p.stock ?? 0,
+    damagedQuantity: p.damaged_quantity ?? 0,
+    pendingStock: p.pending_stock ?? 0,
     lowStockThreshold: p.low_stock_threshold ?? 0,
     createdAt: p.created_at,
+  }
+}
+
+function mapReturn(r) {
+  return {
+    id: r.id,
+    returnNo: r.return_no,
+    orderNo: r.order_no,
+    refundAmount: Number(r.refund_amount || 0),
+    refundMethod: r.refund_method,
+    reason: r.reason,
+    note: r.note,
+    createdAt: r.created_at,
+    items: (r.inventory_return_items || []).map((i) => ({
+      id: i.id,
+      productName: i.product_name,
+      quantity: i.quantity,
+      condition: i.item_condition,
+    })),
   }
 }
 
@@ -93,6 +115,7 @@ export function useInventory() {
         products.value = local.listProducts()
         orders.value = local.listOrders()
         movements.value = local.listMovements()
+        returns.value = local.listReturns()
         orgSetupNeeded.value = false
         loaded.value = true
         return
@@ -108,16 +131,18 @@ export function useInventory() {
         return
       }
       orgSetupNeeded.value = false
-      const [p, o, m] = await Promise.all([
+      const [p, o, m, r] = await Promise.all([
         api.listProducts(),
         api.listOrders(),
         api.listMovements(),
+        api.listReturns().catch(() => []),
       ])
       if (reloadSeq !== seq) return
       const items = await api.listOrderItems(o.map((x) => x.id))
       products.value = p.map(mapProduct)
       orders.value = o.map((order) => mapOrder(order, items))
       movements.value = m.map(mapMovement)
+      returns.value = r.map(mapReturn)
       loaded.value = true
     } finally {
       if (reloadSeq === seq) loading.value = false
@@ -169,10 +194,18 @@ export function useInventory() {
     await reload()
   }
 
+  /** 销售退货：guest → 本地沙箱；登录 → inventory_create_sale_return RPC（库存与订单状态由服务端原子更新） */
+  async function createReturn(payload) {
+    if (isGuest.value) local.createSaleReturn(payload)
+    else await api.createSaleReturn(payload)
+    await reload()
+  }
+
   return {
     products,
     orders,
     movements,
+    returns,
     loading,
     loaded,
     isGuest,
@@ -185,6 +218,7 @@ export function useInventory() {
     stockOutProduct,
     createSale,
     confirmOrder,
+    createReturn,
   }
 }
 

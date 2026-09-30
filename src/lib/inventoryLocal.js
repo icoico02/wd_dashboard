@@ -245,6 +245,88 @@ export function confirmOrder(orderId) {
   for (const m of movements) pushMovement(m)
 }
 
+/* ------------------------------------ 退货 ------------------------------------ */
+export function listReturns() {
+  return load('returns')
+}
+
+/** 销售退货（本地沙箱镜像）：resellable 回库存 / damaged 报损 / pending 待定 */
+export function createSaleReturn({ order, items, refundAmount, refundMethod, reason, note }) {
+  if (!items.length) throw new Error('请选择退货商品')
+  if (!reason || !reason.trim()) throw new Error('请填写退货原因')
+  if (refundAmount < 0) throw new Error('退款金额无效')
+  const returns = load('returns')
+  const products = load('products')
+  const byId = new Map(products.map((p) => [p.id, p]))
+  const returnItems = []
+  for (const item of items) {
+    const p = byId.get(item.productId)
+    if (!p) throw new Error('商品不存在')
+    if (item.quantity <= 0) throw new Error('退货数量无效')
+    if (!['resellable', 'damaged', 'pending'].includes(item.condition)) {
+      throw new Error('退货处理方式无效')
+    }
+    returnItems.push({
+      id: uid(),
+      orderItemId: item.orderItemId ?? null,
+      productId: item.productId,
+      productName: item.productName ?? p.name,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice ?? p.salePrice,
+      condition: item.condition,
+    })
+    if (item.condition === 'resellable') {
+      p.stock += item.quantity
+      pushMovementLocal({
+        type: 'inbound',
+        productId: p.id,
+        productName: p.name,
+        quantity: item.quantity,
+        unitCost: p.costPrice,
+        note: `退货入库 ${reason}`,
+        docNo: 'RT',
+      })
+    } else if (item.condition === 'damaged') {
+      pushMovementLocal({
+        type: 'loss',
+        productId: p.id,
+        productName: p.name,
+        quantity: -item.quantity,
+        unitCost: p.costPrice,
+        note: `退货报损 ${reason}`,
+        docNo: 'RT',
+      })
+    }
+  }
+  save('products', products)
+  const ret = {
+    id: uid(),
+    returnNo: nextNo(returns, 'RT'),
+    orderNo: order?.orderNo || null,
+    refundAmount,
+    refundMethod,
+    reason,
+    note: note || null,
+    items: returnItems,
+    createdAt: new Date().toISOString(),
+  }
+  returns.unshift(ret)
+  save('returns', returns)
+  return ret.id
+}
+
+function pushMovementLocal(m) {
+  const list = load('movements')
+  list.unshift({
+    id: uid(),
+    supplier: null,
+    docNo: 'RT',
+    createdAt: new Date().toISOString(),
+    ...m,
+  })
+  save('movements', list.slice(0, 300))
+}
+
 /* ------------------------------------ 流水 ------------------------------------ */
 export function listMovements() {
   return load('movements')

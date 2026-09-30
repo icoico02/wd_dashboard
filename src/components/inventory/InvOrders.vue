@@ -56,9 +56,19 @@
                 <span class="inv-profit"> · 利润 {{ fmtMoney(o.totalProfit) }}</span>
               </template>
             </span>
-            <button type="button" class="inv-act" @click="printOrder(o)">
-              <Printer :size="14" aria-hidden="true" />打印
-            </button>
+            <div class="inv-order-btns">
+              <button
+                v-if="o.status === 'completed'"
+                type="button"
+                class="inv-act"
+                @click="$emit('return-order', o)"
+              >
+                退货
+              </button>
+              <button type="button" class="inv-act" @click="printOrder(o)">
+                <Printer :size="14" aria-hidden="true" />打印
+              </button>
+            </div>
           </footer>
           <p v-if="o.note" class="inv-order-note">备注：{{ o.note }}</p>
         </article>
@@ -76,6 +86,8 @@ import { useToast } from '../../composables/useToast'
 
 const { orders, confirmOrder } = useInventory()
 const { showToast } = useToast()
+
+defineEmits(['return-order'])
 
 const confirmingId = ref(null)
 
@@ -275,6 +287,11 @@ html[data-theme="dark"] .inv-profit {
   margin: 0;
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.inv-order-btns {
+  display: flex;
+  gap: 6px;
 }
 
 .inv-confirm {

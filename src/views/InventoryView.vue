@@ -66,6 +66,7 @@
       <div v-if="loading && !loaded" class="inv-loading glass-subtle">正在载入数据…</div>
 
       <template v-else>
+        <InvOverview v-show="current === 'overview'" />
         <InvProducts
           v-show="current === 'products'"
           :products="products"
@@ -75,8 +76,14 @@
           @outbound="(p) => openStockDialog('outbound', p)"
           @delete="askDeleteProduct"
         />
-        <InvOrders v-show="current === 'orders'" />
+        <InvOrders
+          v-show="current === 'orders'"
+          @return-order="openReturnDialog"
+        />
+        <InvReturns v-show="current === 'returns'" />
+        <InvStock v-show="current === 'stock'" />
         <InvMovements v-show="current === 'movements'" />
+        <InvDocuments v-show="current === 'documents'" />
       </template>
     </template>
   </FeatureShell>
@@ -245,6 +252,68 @@
     </form>
   </GlassDialog>
 
+  <!-- 销售退货 -->
+  <GlassDialog
+    :open="returnDlg.open"
+    :title="`销售退货 ${returnDlg.order?.orderNo || ''}`"
+    width="460px"
+    @close="returnDlg.open = false"
+  >
+    <form class="inv-form" @submit.prevent="submitReturn">
+      <div class="inv-return-items">
+        <label v-for="(row, i) in returnDlg.rows" :key="row.orderItemId" class="inv-return-item">
+          <input v-model="row.selected" type="checkbox" />
+          <span class="inv-return-info">
+            <b>{{ row.productName }}</b>
+            <i>可退 {{ row.maxQty }} · 单价 {{ fmtMoney(row.unitPrice) }}</i>
+          </span>
+          <input
+            v-if="row.selected"
+            v-model.number="row.returnQty"
+            type="number"
+            min="1"
+            :max="row.maxQty"
+            step="1"
+          />
+          <select v-if="row.selected" v-model="row.condition">
+            <option value="resellable">可再销售</option>
+            <option value="damaged">报损</option>
+            <option value="pending">待定</option>
+          </select>
+        </label>
+      </div>
+      <label class="inv-field">
+        <span>退货原因（必填）</span>
+        <input v-model="returnDlg.reason" type="text" required maxlength="60" />
+      </label>
+      <div class="inv-field-pair">
+        <label class="inv-field">
+          <span>退款方式</span>
+          <select v-model="returnDlg.refundMethod">
+            <option value="cash">现金</option>
+            <option value="wechat">微信支付</option>
+            <option value="alipay">支付宝</option>
+            <option value="bank_card">银行卡</option>
+            <option value="other">其他</option>
+          </select>
+        </label>
+        <label class="inv-field">
+          <span>退款金额</span>
+          <input v-model.number="returnDlg.refundAmount" type="number" min="0" step="0.01" required />
+        </label>
+      </div>
+      <p class="inv-form-hint">建议退款金额：{{ fmtMoney(suggestedRefund) }}（不得超过订单实付）</p>
+      <label class="inv-field">
+        <span>备注（可选）</span>
+        <input v-model="returnDlg.note" type="text" maxlength="60" />
+      </label>
+      <div class="inv-dialog-actions">
+        <button type="button" class="inv-btn-plain" @click="returnDlg.open = false">取消</button>
+        <button type="submit" class="inv-btn-primary" :disabled="saving">提交退货</button>
+      </div>
+    </form>
+  </GlassDialog>
+
   <!-- 删除商品确认 -->
   <GlassDialog :open="deleteConfirm.open" title="删除商品？" width="360px" @close="deleteConfirm.open = false">
     <p class="inv-dialog-text">
@@ -263,9 +332,13 @@ import { Receipt, X } from 'lucide-vue-next'
 import AuthPanel from '../components/AuthPanel.vue'
 import FeatureShell from '../components/FeatureShell.vue'
 import GlassDialog from '../components/GlassDialog.vue'
+import InvDocuments from '../components/inventory/InvDocuments.vue'
 import InvMovements from '../components/inventory/InvMovements.vue'
 import InvOrders from '../components/inventory/InvOrders.vue'
+import InvOverview from '../components/inventory/InvOverview.vue'
 import InvProducts from '../components/inventory/InvProducts.vue'
+import InvReturns from '../components/inventory/InvReturns.vue'
+import InvStock from '../components/inventory/InvStock.vue'
 import { useAuth } from '../composables/useAuth'
 import { useInventory, fmtMoney } from '../composables/useInventory'
 import { useToast } from '../composables/useToast'
@@ -275,6 +348,7 @@ const { showToast } = useToast()
 const {
   products,
   orders,
+  returns,
   loading,
   loaded,
   isGuest,
@@ -285,6 +359,7 @@ const {
   receiveProduct,
   stockOutProduct,
   createSale,
+  createReturn,
   reload,
 } = useInventory()
 
@@ -300,6 +375,7 @@ watch(authUser, (user) => {
 })
 
 const sections = computed(() => [
+  { id: 'overview', label: '总览' },
   { id: 'products', label: '商品库存' },
   {
     id: 'orders',
@@ -308,7 +384,10 @@ const sections = computed(() => [
       ['pending_confirmation', 'pending_fulfillment'].includes(o.status),
     ).length,
   },
+  { id: 'returns', label: '退货', badge: returns.value.length || null },
+  { id: 'stock', label: '库存状态' },
   { id: 'movements', label: '出入库流水' },
+  { id: 'documents', label: '单据' },
 ])
 
 const categories = computed(() => [...new Set(products.value.map((p) => p.category || '未分类'))])
@@ -531,7 +610,154 @@ async function submitSale() {
     saving.value = false
   }
 }
+
+/* ------------------------------------ 销售退货 ------------------------------------ */
+const returnDlg = reactive({
+  open: false,
+  order: null,
+  rows: [],
+  reason: '',
+  refundMethod: 'cash',
+  refundAmount: 0,
+  note: '',
+})
+
+function openReturnDialog(order) {
+  returnDlg.order = order
+  returnDlg.rows = (order.items || []).map((i) => ({
+    orderItemId: i.id,
+    productId: i.productId,
+    productName: i.productName,
+    unitPrice: i.unitPrice,
+    maxQty: i.quantity,
+    returnQty: i.quantity,
+    selected: false,
+    condition: 'resellable',
+  }))
+  returnDlg.reason = ''
+  returnDlg.refundMethod = 'cash'
+  returnDlg.note = ''
+  returnDlg.refundAmount = 0
+  returnDlg.open = true
+}
+
+const suggestedRefund = computed(() => {
+  const o = returnDlg.order
+  if (!o) return 0
+  const ratio = o.subtotal > 0 ? o.totalAmount / o.subtotal : 1
+  const sum = returnDlg.rows
+    .filter((r) => r.selected)
+    .reduce((s, r) => s + r.unitPrice * Math.min(r.returnQty, r.maxQty) * ratio, 0)
+  return Math.round(sum * 100) / 100
+})
+
+watch(suggestedRefund, (v) => {
+  returnDlg.refundAmount = v
+})
+
+async function submitReturn() {
+  if (saving.value) return
+  const items = returnDlg.rows
+    .filter((r) => r.selected && r.returnQty > 0)
+    .map((r) => ({
+      order_item_id: r.orderItemId,
+      productId: r.productId,
+      productName: r.productName,
+      quantity: Math.min(r.returnQty, r.maxQty),
+      condition: r.condition,
+      unitPrice: r.unitPrice,
+    }))
+  if (!items.length) {
+    showToast('请至少勾选一件退货商品')
+    return
+  }
+  if (!returnDlg.reason.trim()) {
+    showToast('请填写退货原因')
+    return
+  }
+  saving.value = true
+  try {
+    await createReturn({
+      order: returnDlg.order,
+      items,
+      refundAmount: Number(returnDlg.refundAmount) || 0,
+      refundMethod: returnDlg.refundMethod,
+      reason: returnDlg.reason.trim(),
+      note: returnDlg.note,
+    })
+    returnDlg.open = false
+    current.value = 'returns'
+    showToast('退货已提交，库存与订单状态已更新')
+  } catch (e) {
+    showToast(e.message || '退货提交失败')
+  } finally {
+    saving.value = false
+  }
+}
 </script>
+
+<style scoped>
+.inv-return-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.inv-return-item {
+  display: grid;
+  grid-template-columns: auto 1fr 58px 96px;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-subtle);
+}
+
+.inv-return-item input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.inv-return-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.inv-return-info b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inv-return-info i {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.inv-return-item input[type='number'],
+.inv-return-item select {
+  height: 32px;
+  padding: 0 7px;
+  border-radius: 9px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-strong);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  outline: none;
+  min-width: 0;
+}
+</style>
 
 <style scoped>
 .inv-banner {

@@ -35,6 +35,30 @@ export async function listProducts() {
   return assert(data, error) || []
 }
 
+/** 退货记录列表（需执行 supabase/inventory_returns_visibility_fix.sql 后可见） */
+export async function listReturns() {
+  const { data, error } = await supabase
+    .from('inventory_returns')
+    .select('*, inventory_return_items(*)')
+    .order('created_at', { ascending: false })
+    .limit(100)
+  return assert(data, error) || []
+}
+
+/** 销售退货：按订单退回商品（resellable / damaged / pending），服务端校验数量与退款上限 */
+export async function createSaleReturn({ orderId, items, refundAmount, refundMethod, reason, note }) {
+  const { data, error } = await supabase.rpc('inventory_create_sale_return', {
+    p_order_id: orderId,
+    p_items: items,
+    p_refund_amount: refundAmount,
+    p_refund_method: refundMethod,
+    p_reason: reason,
+    p_note: note || null,
+  })
+  if (error) throw new Error(error.message)
+  return data
+}
+
 /** 新增 / 编辑商品（编辑不改库存，库存走入库/出库/调整） */
 export async function saveProduct(payload, productId = null) {
   const { data, error } = await supabase.rpc('inventory_save_product', {
