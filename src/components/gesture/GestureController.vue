@@ -1,12 +1,20 @@
 <template>
-  <div class="gc" :class="{ 'gc-collapsed': collapsed && isMobile }">
-    <!-- 紧凑头：图标 + 开关 -->
-    <div class="gc-head glass">
+  <div
+    ref="rootRef"
+    class="gc"
+    :class="{ 'gc-collapsed': collapsed && isMobile, 'gc-flip': flipPanel, 'gc-dragging': dragging }"
+    :style="rootStyle"
+  >
+    <!-- 紧凑头：可拖拽 · 图标 · 开关 -->
+    <div
+      class="gc-head glass"
+      @pointerdown="onHeadPointerDown"
+    >
       <button
         type="button"
         class="gc-expand"
         :aria-label="collapsed ? '展开手势控制' : '收起手势控制'"
-        @click="collapsed = !collapsed"
+        @click.stop="onExpandClick"
       >
         <Hand :size="16" :stroke-width="1.8" aria-hidden="true" />
       </button>
@@ -26,13 +34,14 @@
         aria-label="手势控制总开关"
         :aria-checked="enabled"
         :disabled="busy"
-        @click="toggle"
+        @click.stop="toggle"
+        @pointerdown.stop
       ></button>
     </div>
 
     <!-- 详细面板 -->
     <Transition name="gc-pop">
-      <div v-if="!collapsed" class="gc-panel glass">
+      <div v-if="!collapsed" class="gc-panel glass" @pointerdown.stop>
         <div class="gc-row">
           <span class="gc-label">当前状态</span>
           <span class="gc-value">{{ stateLabel }} · {{ gestureLabel }}</span>
@@ -118,7 +127,7 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Hand } from 'lucide-vue-next'
 import { useGestureControl } from '../../composables/useGestureControl'
 import GestureCameraPreview from './GestureCameraPreview.vue'
@@ -141,9 +150,53 @@ const {
   debugInfo,
 } = useGestureControl()
 
+const POS_KEY = 'dada-dashboard:gesture-pos'
+
 const collapsed = ref(true)
 const busy = ref(false)
 const isMobile = ref(false)
+const rootRef = ref(null)
+const dragging = ref(false)
+const flipPanel = ref(false)
+
+/** 位置：left/top 像素；null = 默认右上 */
+const pos = ref(loadPos())
+
+function loadPos() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(POS_KEY) || 'null')
+    if (raw && Number.isFinite(raw.x) && Number.isFinite(raw.y)) {
+      return { x: raw.x, y: raw.y }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+function savePos() {
+  if (!pos.value) return
+  try {
+    localStorage.setItem(POS_KEY, JSON.stringify(pos.value))
+  } catch {
+    /* ignore */
+  }
+}
+
+const rootStyle = computed(() => {
+  if (!pos.value) {
+    // 默认：右上角（保留原设计位置）
+    return {
+      right: 'max(12px, calc((100vw - var(--page-max)) / 2 + 8px))',
+      top: 'calc(14px + env(safe-area-inset-top))',
+    }
+  }
+  return {
+    left: `${pos.value.x}px`,
+    top: `${pos.value.y}px`,
+    right: 'auto',
+  }
+})
 
 const sensOptions = [
   { value: 'low', label: '低' },
@@ -178,35 +231,163 @@ async function toggle() {
   }
 }
 
+function onExpandClick() {
+  if (dragState.moved) return
+  collapsed.value = !collapsed.value
+  if (!collapsed.value) updateFlip()
+}
+
+/** 点击控制器 / 弹窗之外 → 关闭弹窗 */
+function onDocPointerDown(e) {
+  if (collapsed.value) return
+  const root = rootRef.value
+  if (root && e.target instanceof Node && root.contains(e.target)) return
+  collapsed.value = true
+}
+
+function onKey(e) {
+  if (e.key === 'Escape' && !collapsed.value) {
+    collapsed.value = true
+  }
+}
+
+// —— 拖拽 ——
+const dragState = {
+  active: false,
+  moved: false,
+  startX: 0,
+  startY: 0,
+  originX: 0,
+  originY: 0,
+  pointerId: -1,
+}
+
+function clampPos(x, y) {
+  const el = rootRef.value
+  const w = el?.offsetWidth || 200
+  const h = el?.offsetHeight || 48
+  const maxX = Math.max(8, window.innerWidth - w - 8)
+  const maxY = Math.max(8, window.innerHeight - h - 8)
+  return {
+    x: Math.min(maxX, Math.max(8, x)),
+    y: Math.min(maxY, Math.max(8, y)),
+  }
+}
+
+function onHeadPointerDown(e) {
+  // 只允许主键 / 单指；按钮不参与拖拽
+  if (e.button != null && e.button !== 0) return
+  if (e.target.closest('button')) return
+
+  const el = rootRef.value
+  if (!el) return
+
+  const rect = el.getBoundingClientRect()
+  dragState.active = true
+  dragState.moved = false
+  dragState.startX = e.clientX
+  dragState.startY = e.clientY
+  dragState.originX = rect.left
+  dragState.originY = rect.top
+  dragState.pointerId = e.pointerId
+
+  // 当前是 right 定位时，先落到 left/top
+  if (!pos.value) {
+    pos.value = { x: rect.left, y: rect.top }
+  }
+
+  try {
+    e.currentTarget.setPointerCapture(e.pointerId)
+  } catch {
+    /* ignore */
+  }
+  e.preventDefault()
+}
+
+function onPointerMove(e) {
+  if (!dragState.active || e.pointerId !== dragState.pointerId) return
+  const dx = e.clientX - dragState.startX
+  const dy = e.clientY - dragState.startY
+  if (!dragState.moved && Math.hypot(dx, dy) < 4) return
+
+  dragState.moved = true
+  dragging.value = true
+  const next = clampPos(dragState.originX + dx, dragState.originY + dy)
+  pos.value = next
+  updateFlip()
+}
+
+function onPointerUp(e) {
+  if (!dragState.active || e.pointerId !== dragState.pointerId) return
+  dragState.active = false
+  dragging.value = false
+  if (dragState.moved) {
+    savePos()
+    // 避免拖完误触发 click
+    window.setTimeout(() => {
+      dragState.moved = false
+    }, 0)
+  }
+}
+
+function updateFlip() {
+  const el = rootRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const spaceBelow = window.innerHeight - rect.bottom
+  // 下方空间不足且上方更宽敞 → 面板向上弹
+  flipPanel.value = spaceBelow < 300 && rect.top > 280
+}
+
 function onResize() {
   isMobile.value = window.innerWidth < 768
+  if (pos.value) {
+    pos.value = clampPos(pos.value.x, pos.value.y)
+    savePos()
+  }
+  if (!collapsed.value) updateFlip()
 }
 
 onMounted(() => {
   onResize()
-  // 手机默认收起成胶囊，桌面默认展开
   collapsed.value = isMobile.value
   window.addEventListener('resize', onResize)
+  document.addEventListener('pointerdown', onDocPointerDown, true)
+  document.addEventListener('keydown', onKey)
+  window.addEventListener('pointermove', onPointerMove)
+  window.addEventListener('pointerup', onPointerUp)
+  window.addEventListener('pointercancel', onPointerUp)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
-  // 组件卸载必须真正关摄像头、停推理、清轨迹
+  document.removeEventListener('pointerdown', onDocPointerDown, true)
+  document.removeEventListener('keydown', onKey)
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerUp)
+  window.removeEventListener('pointercancel', onPointerUp)
   destroy()
+})
+
+watch(collapsed, (v) => {
+  if (!v) updateFlip()
 })
 </script>
 
 <style scoped>
 .gc {
   position: fixed;
-  top: calc(14px + env(safe-area-inset-top));
-  right: max(12px, calc((100vw - var(--page-max)) / 2 + 8px));
   z-index: 1200;
   width: min(280px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;
   gap: 8px;
   pointer-events: none;
+  touch-action: none;
+}
+
+.gc-flip {
+  flex-direction: column-reverse;
 }
 
 .gc-head,
@@ -221,6 +402,14 @@ onBeforeUnmount(() => {
   padding: 8px 10px;
   border-radius: 999px;
   background: var(--glass-bg-strong);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.gc-dragging .gc-head {
+  cursor: grabbing;
+  box-shadow: var(--glass-shadow-hover);
 }
 
 .gc-expand {
@@ -295,6 +484,7 @@ onBeforeUnmount(() => {
   background: var(--glass-bg-strong);
   max-height: min(70vh, 560px);
   overflow-y: auto;
+  touch-action: pan-y;
 }
 
 .gc-row {
@@ -427,11 +617,15 @@ onBeforeUnmount(() => {
   transform: translateY(-6px) scale(0.98);
 }
 
+.gc-flip .gc-pop-enter-from,
+.gc-flip .gc-pop-leave-to {
+  transform: translateY(6px) scale(0.98);
+}
+
 /* 手机端：默认折叠成胶囊 */
 @media (max-width: 767px) {
   .gc {
     width: auto;
-    right: 12px;
   }
 
   .gc-collapsed .gc-head {
