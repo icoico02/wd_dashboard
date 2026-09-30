@@ -61,36 +61,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=你的匿名密钥</pre>
         <div class="history-head">
           <h2 class="section-title">签到记录</h2>
           <div class="history-tools">
-            <button
-              type="button"
-              class="tool-btn"
-              title="导出 CSV"
-              aria-label="导出 CSV"
-              :disabled="!historyList.length"
-              @click="doExportCsv"
-            >
-              <FileText :size="14" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              class="tool-btn"
-              title="导出 Excel"
-              aria-label="导出 Excel"
-              :disabled="!historyList.length"
-              @click="doExportExcel"
-            >
-              <FileSpreadsheet :size="14" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              class="tool-btn"
-              title="导出 PDF（打印窗口中选「另存为 PDF」）"
-              aria-label="导出 PDF"
-              :disabled="!historyList.length"
-              @click="doExportPdf"
-            >
-              <FileDown :size="14" aria-hidden="true" />
-            </button>
+            <ExportMenu :disabled="!historyList.length" @export="doExport" />
             <button type="button" class="makeup-btn" @click="openMakeUpPanel">
               <CalendarPlus :size="15" aria-hidden="true" />补卡
             </button>
@@ -133,8 +104,8 @@ VITE_SUPABASE_PUBLISHABLE_KEY=你的匿名密钥</pre>
   <GlassDialog :open="isMakeUpPanelOpen" title="补卡" @close="isMakeUpPanelOpen = false">
     <form class="dialog-form" @submit.prevent="submitMakeUpRecord">
       <label class="field">
-        <span class="field-label">日期（仅支持今天之前）</span>
-        <input v-model="makeUpForm.recordDate" type="date" :max="yesterdayKey" required />
+        <span class="field-label">日期（今天或历史日期均可）</span>
+        <input v-model="makeUpForm.recordDate" type="date" required />
       </label>
       <div class="field-pair">
         <label class="field">
@@ -189,18 +160,9 @@ VITE_SUPABASE_PUBLISHABLE_KEY=你的匿名密钥</pre>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import {
-  CalendarPlus,
-  FileDown,
-  FileSpreadsheet,
-  FileText,
-  LogIn,
-  LogOut,
-  Pencil,
-  Settings,
-  Trash2,
-} from 'lucide-vue-next'
+import { CalendarPlus, LogIn, LogOut, Pencil, Settings, Trash2 } from 'lucide-vue-next'
 import AuthPanel from '../components/AuthPanel.vue'
+import ExportMenu from '../components/ExportMenu.vue'
 import FeatureShell from '../components/FeatureShell.vue'
 import GlassDialog from '../components/GlassDialog.vue'
 import { useAuth } from '../composables/useAuth'
@@ -443,10 +405,6 @@ async function submitMakeUpRecord() {
     showToast('请填写有效的补签日期和时间')
     return
   }
-  if (recordDate >= todayKey.value) {
-    showToast('补签仅支持今天之前的日期')
-    return
-  }
   if (new Date(checkOutTime) <= new Date(checkInTime)) {
     showToast('下班时间需要晚于上班时间')
     return
@@ -583,6 +541,12 @@ function buildExportRows() {
 
 function exportBaseName() {
   return `出勤记录_${todayKey.value.replace(/-/g, '')}`
+}
+
+function doExport(kind) {
+  if (kind === 'csv') doExportCsv()
+  else if (kind === 'excel') doExportExcel()
+  else doExportPdf()
 }
 
 function doExportCsv() {
@@ -803,35 +767,6 @@ html[data-theme="dark"] .hero-status.done { color: #7db8ff; }
   display: flex;
   align-items: center;
   gap: 7px;
-}
-
-.tool-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--glass-border);
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(140%);
-  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(140%);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, transform 120ms var(--ease-glass), opacity 160ms ease;
-}
-
-.tool-btn:hover:not(:disabled) {
-  background: var(--glass-bg-hover);
-  color: var(--accent);
-}
-
-.tool-btn:active:not(:disabled) {
-  transform: scale(0.92);
-}
-
-.tool-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 .section-title {
