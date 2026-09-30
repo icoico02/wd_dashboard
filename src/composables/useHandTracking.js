@@ -9,6 +9,7 @@ import { ref, shallowRef } from 'vue'
 import { computePalmCenter, createPalmTracker } from '../utils/gestureSmoothing'
 import {
   PALM_INDICES,
+  INDEX_TIP,
   normalizeLandmarks,
   readHandConfidence,
   readHandedness,
@@ -78,6 +79,8 @@ export function useHandTracking() {
   const confidence = ref(0)
   const palm = shallowRef(null) // {x,y}
   const palmVelocity = shallowRef({ x: 0, y: 0 })
+  const indexTip = shallowRef(null) // 食指指尖 {x,y} —— 虚拟指针控制点
+  const indexVelocity = shallowRef({ x: 0, y: 0 })
   const hasHand = ref(false)
 
   const fps = ref(0)
@@ -94,16 +97,20 @@ export function useHandTracking() {
   let destroyed = false
 
   const tracker = createPalmTracker({ historySize: 7, emaAlpha: 0.35 })
+  const indexTracker = createPalmTracker({ historySize: 6, emaAlpha: 0.4 })
 
   function resetFrameState() {
     landmarks.value = null
     rawLandmarks.value = null
     palm.value = null
     palmVelocity.value = { x: 0, y: 0 }
+    indexTip.value = null
+    indexVelocity.value = { x: 0, y: 0 }
     hasHand.value = false
     confidence.value = 0
     handedness.value = ''
     tracker.reset()
+    indexTracker.reset()
   }
 
   function stopTracks() {
@@ -329,10 +336,16 @@ export function useHandTracking() {
     const palmCenter = computePalmCenter(lm, PALM_INDICES)
     const smoothed = tracker.update(palmCenter.x, palmCenter.y, now)
 
+    // 食指指尖 —— 虚拟鼠标控制点
+    const tip = lm[INDEX_TIP]
+    const tipSmooth = tip ? indexTracker.update(tip.x, tip.y, now) : null
+
     rawLandmarks.value = raw
     landmarks.value = lm
     palm.value = { x: smoothed.x, y: smoothed.y }
     palmVelocity.value = smoothed.velocity
+    indexTip.value = tipSmooth ? { x: tipSmooth.x, y: tipSmooth.y } : tip ? { x: tip.x, y: tip.y } : null
+    indexVelocity.value = tipSmooth ? tipSmooth.velocity : { x: 0, y: 0 }
     hasHand.value = true
     confidence.value = readHandConfidence(result)
     handedness.value = readHandedness(result)
@@ -355,6 +368,8 @@ export function useHandTracking() {
     confidence,
     palm,
     palmVelocity,
+    indexTip,
+    indexVelocity,
     hasHand,
     fps,
     inferenceMs,

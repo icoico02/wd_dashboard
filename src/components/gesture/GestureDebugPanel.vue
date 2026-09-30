@@ -36,6 +36,12 @@
         <span>Scroll V</span><em>{{ fmt(debug.scrollVelocity) }}</em>
       </div>
       <div class="gdp-row">
+        <span>Ptr X</span><em>{{ debug.pointerX ?? '—' }}</em>
+      </div>
+      <div class="gdp-row">
+        <span>Ptr Y</span><em>{{ debug.pointerY ?? '—' }}</em>
+      </div>
+      <div class="gdp-row">
         <span>Infer ms</span><em>{{ debug.inferenceMs }}</em>
       </div>
     </div>

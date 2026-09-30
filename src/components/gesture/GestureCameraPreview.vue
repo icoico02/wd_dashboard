@@ -84,17 +84,32 @@ function draw() {
     ctx.stroke()
   }
 
-  // 关键点
+  // 关键点（食指指尖 8 高亮 —— 虚拟指针）
   for (let i = 0; i < lm.length; i++) {
     const p = lm[i]
-    const r = i === 0 || i === 4 || i === 8 ? 4.5 : 3
+    const isIndexTip = i === 8
+    const isThumbTip = i === 4
+    const r = isIndexTip ? 6 : isThumbTip ? 4.5 : 3
     ctx.beginPath()
-    ctx.fillStyle = i === 4 || i === 8 ? 'rgba(255, 210, 80, 0.95)' : 'rgba(255, 255, 255, 0.95)'
+    if (isIndexTip) {
+      ctx.fillStyle = 'rgba(10, 132, 255, 1)'
+    } else if (isThumbTip) {
+      ctx.fillStyle = 'rgba(255, 210, 80, 0.95)'
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+    }
     ctx.arc(mapX(p.x), mapY(p.y), r, 0, Math.PI * 2)
     ctx.fill()
     ctx.lineWidth = 1
     ctx.strokeStyle = 'rgba(20, 40, 70, 0.35)'
     ctx.stroke()
+    if (isIndexTip) {
+      ctx.beginPath()
+      ctx.strokeStyle = 'rgba(10, 132, 255, 0.55)'
+      ctx.lineWidth = 2
+      ctx.arc(mapX(p.x), mapY(p.y), 11, 0, Math.PI * 2)
+      ctx.stroke()
+    }
   }
 
   // Palm Center

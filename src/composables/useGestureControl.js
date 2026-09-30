@@ -1,12 +1,18 @@
 /**
- * useGestureControl —— 手势状态机 + 连续滚动 + Gesture → Action
+ * useGestureControl —— 手势状态机 + 食指虚拟指针 + 连续滚动 + 点击
+ *
+ * 交互模型（v2 · 食指鼠标）：
+ *   👆 食指伸出     → 虚拟指针跟随食指尖，可指向页面元素
+ *   🤏 捏合         → 在指针位置点击（触发 onPinch）
+ *   ✋ 张开手掌移动  → 连续滚动（上下）/ 左右挥切换
+ *   ✊ 握拳         → 暂停
  *
  * 状态机：
- *   OFF（总开关关）→ 完全停止
- *   ON → IDLE →（✋ 张开手）ACTIVE ⇄ SCROLLING
- *                    ↓ 左右挥        ↓ 握拳
- *                 COOLDOWN → ACTIVE  PAUSED →（✋）ACTIVE
- *   丢失手势一段时间 → IDLE
+ *   OFF → 完全停止
+ *   ON  → IDLE →（✋ 或 👆）ACTIVE ⇄ SCROLLING
+ *                   ↓ 捏合/左右挥     ↓ 握拳
+ *                COOLDOWN → ACTIVE   PAUSED →（✋/👆）ACTIVE
+ *   丢手一段时间 → IDLE
  */
 
 import { computed, reactive, ref, watch } from 'vue'
@@ -71,6 +77,14 @@ const lastAction = ref('')
 const panelMessage = ref('')
 const lastHandSeenAt = ref(0)
 
+/** 虚拟指针（视口像素） */
+const pointer = reactive({
+  x: 0,
+  y: 0,
+  visible: false,
+  pressing: false,
+})
+
 // Debug 快照（低频写入，避免每帧打响应式）
 const debugInfo = reactive({
   fps: 0,
@@ -85,23 +99,28 @@ const debugInfo = reactive({
   state: 'IDLE',
   scrollVelocity: 0,
   inferenceMs: 0,
+  pointerX: 0,
+  pointerY: 0,
 })
 
 const tracking = useHandTracking()
-const smoother = createVelocitySmoother({ smoothFactor: 0.15, maxVelocity: 48 })
+const smoother = createVelocitySmoother({ smoothFactor: 0.15, maxVelocity: 56 })
 
 let controlRaf = 0
-let lastPalm = null
+let lastPoint = null
 let lastFrameTs = 0
 let cooldownUntil = 0
 let lastSwipeAt = 0
 let lastPinchAt = 0
+let lastClickAt = 0
 let lastGestureStable = 'none'
 let gestureHoldMs = 0
 let prevGestureAt = 0
 let destroyed = false
 let lastDebugPush = 0
 let cooldownTimer = 0
+let pinchArmed = true // 捏合需松开后再捏，防连点
+let autoActivateMs = 0
 
 function persistPrefs() {
   try {
@@ -118,13 +137,7 @@ function persistPrefs() {
   }
 }
 
-watch(
-  prefs,
-  () => {
-    persistPrefs()
-  },
-  { deep: true },
-)
+watch(prefs, () => persistPrefs(), { deep: true })
 
 function setSensitivity(level) {
   if (level === 'low' || level === 'medium' || level === 'high') {
@@ -137,14 +150,17 @@ function setPanelMessage(msg) {
 }
 
 function clearControlState() {
-  lastPalm = null
+  lastPoint = null
   lastFrameTs = 0
   cooldownUntil = 0
   lastSwipeAt = 0
   lastPinchAt = 0
+  lastClickAt = 0
   lastGestureStable = 'none'
   gestureHoldMs = 0
   prevGestureAt = 0
+  pinchArmed = true
+  autoActivateMs = 0
   smoother.reset()
   if (cooldownTimer) {
     clearTimeout(cooldownTimer)
@@ -153,6 +169,8 @@ function clearControlState() {
   currentGesture.value = 'none'
   state.value = 'IDLE'
   lastAction.value = ''
+  pointer.visible = false
+  pointer.pressing = false
   Object.assign(debugInfo, {
     fps: 0,
     confidence: 0,
@@ -166,6 +184,8 @@ function clearControlState() {
     state: 'IDLE',
     scrollVelocity: 0,
     inferenceMs: 0,
+    pointerX: 0,
+    pointerY: 0,
   })
 }
 
@@ -174,6 +194,72 @@ function cancelControlLoop() {
     cancelAnimationFrame(controlRaf)
     controlRaf = 0
   }
+}
+
+/** 归一化坐标 → 视口像素（含边缘留白） */
+function toViewport(x, y) {
+  const padX = 24
+  const padY = 24
+  const w = window.innerWidth
+  const h = window.innerHeight
+  return {
+    x: padX + x * (w - padX * 2),
+    y: padY + y * (h - padY * 2),
+  }
+}
+
+function updatePointer(x, y) {
+  const p = toViewport(x, y)
+  // 轻微平滑，避免指针抖
+  if (pointer.x === 0 && pointer.y === 0) {
+    pointer.x = p.x
+    pointer.y = p.y
+  } else {
+    pointer.x += (p.x - pointer.x) * 0.35
+    pointer.y += (p.y - pointer.y) * 0.35
+  }
+  pointer.visible = true
+}
+
+/**
+ * 在虚拟指针位置合成点击
+ * 不点击手势面板自身，避免误关开关
+ */
+function clickAtPointer() {
+  const x = pointer.x
+  const y = pointer.y
+  if (!x || !y) return false
+
+  const stack = document.elementsFromPoint(x, y)
+  let target = null
+  for (const el of stack) {
+    if (!(el instanceof Element)) continue
+    if (el.closest('.gc')) continue // 手势控制器
+    if (el.closest('.sp-panel') || el.closest('.sp-overlay')) continue // 设置面板
+    target = el
+    break
+  }
+  if (!target) return false
+
+  const common = {
+    bubbles: true,
+    cancelable: true,
+    clientX: x,
+    clientY: y,
+    view: window,
+  }
+
+  try {
+    target.dispatchEvent(new PointerEvent('pointerdown', { ...common, pointerId: 1, isPrimary: true, pointerType: 'mouse' }))
+    target.dispatchEvent(new MouseEvent('mousedown', common))
+    target.dispatchEvent(new PointerEvent('pointerup', { ...common, pointerId: 1, isPrimary: true, pointerType: 'mouse' }))
+    target.dispatchEvent(new MouseEvent('mouseup', common))
+    target.dispatchEvent(new MouseEvent('click', common))
+  } catch {
+    // 极旧浏览器回退
+    if (typeof target.click === 'function') target.click()
+  }
+  return true
 }
 
 /**
@@ -201,7 +287,6 @@ function fireSwipe(direction) {
   }
 
   if (!handled) {
-    // 默认：切换路由页面（左=上一页，右=下一页）
     const current = router.currentRoute.value.path
     const idx = ROUTE_ORDER.indexOf(current)
     if (idx !== -1) {
@@ -218,7 +303,6 @@ function fireSwipe(direction) {
     setPanelMessage(direction === 'left' ? '← 左挥' : '→ 右挥')
   }
 
-  // COOLDOWN 稍后回到 ACTIVE
   if (cooldownTimer) clearTimeout(cooldownTimer)
   cooldownTimer = window.setTimeout(() => {
     cooldownTimer = 0
@@ -229,19 +313,29 @@ function fireSwipe(direction) {
 
 function firePinch() {
   const now = performance.now()
-  if (now - lastPinchAt < 500) return
+  if (now - lastPinchAt < 380) return
   lastPinchAt = now
+
+  // 在指针位置点击页面
+  const clicked = clickAtPointer()
+  if (clicked) lastClickAt = now
+
   let handled = false
   for (const fn of pinchHandlers) {
     try {
-      fn()
+      fn({ x: pointer.x, y: pointer.y, clicked })
       handled = true
     } catch (err) {
       console.error('[gesture] pinch handler error', err)
     }
   }
+
   lastAction.value = 'pinch'
-  setPanelMessage(handled ? '🤏 已捏合' : '🤏 捏合')
+  setPanelMessage(clicked ? '🤏 已点击' : handled ? '🤏 捏合' : '🤏 捏合')
+  pointer.pressing = true
+  window.setTimeout(() => {
+    pointer.pressing = false
+  }, 120)
 }
 
 function pushDebug(ts) {
@@ -253,11 +347,12 @@ function pushDebug(ts) {
   debugInfo.gesture = currentGesture.value
   debugInfo.state = state.value
   debugInfo.scrollVelocity = Math.round(smoother.current * 100) / 100
+  debugInfo.pointerX = Math.round(pointer.x)
+  debugInfo.pointerY = Math.round(pointer.y)
 }
 
 /**
  * 控制循环：与 MediaPipe 推理解耦
- * 用 rAF 持续更新滚动速度
  */
 function controlLoop() {
   if (destroyed || !enabled.value) return
@@ -266,14 +361,16 @@ function controlLoop() {
   const ts = performance.now()
   const presets = resolveSensitivity(prefs.sensitivity)
 
-  // 无手 → 逐渐回到 IDLE，滚动自然减速
+  // 无手 → 逐渐回到 IDLE，滚动自然减速，指针隐藏
   if (!tracking.hasHand.value || tracking.confidence.value < presets.minConfidence) {
     if (lastHandSeenAt.value && ts - lastHandSeenAt.value > presets.handLostMs) {
       if (state.value !== 'IDLE') {
         state.value = 'IDLE'
         currentGesture.value = 'none'
-        lastPalm = null
+        lastPoint = null
+        autoActivateMs = 0
       }
+      pointer.visible = false
     }
     smoother.setTarget(0)
     applyScroll(smoother.tick(1), 1 / 60)
@@ -284,10 +381,12 @@ function controlLoop() {
   lastHandSeenAt.value = ts
 
   const palm = tracking.palm.value
-  const velocity = tracking.palmVelocity.value
+  const indexTip = tracking.indexTip.value
+  const indexVel = tracking.indexVelocity.value
+  const palmVel = tracking.palmVelocity.value
   const lm = tracking.landmarks.value
 
-  if (!palm) {
+  if (!lm) {
     if (prefs.debug) pushDebug(ts)
     return
   }
@@ -295,29 +394,39 @@ function controlLoop() {
   const dt = lastFrameTs ? Math.min((ts - lastFrameTs) / 1000, 0.1) : 1 / 60
   lastFrameTs = ts
 
-  // 帧间位移（平滑后）—— 主要用于 debug 显示
+  // 控制点优先食指指尖，退化到掌心
+  const controlPt = indexTip || palm
+  const controlVel = indexTip ? indexVel : palmVel
+
+  if (!controlPt) {
+    if (prefs.debug) pushDebug(ts)
+    return
+  }
+
   let deltaX = 0
   let deltaY = 0
-  if (lastPalm) {
-    deltaX = palm.x - lastPalm.x
-    deltaY = palm.y - lastPalm.y
+  if (lastPoint) {
+    deltaX = controlPt.x - lastPoint.x
+    deltaY = controlPt.y - lastPoint.y
   }
-  lastPalm = { x: palm.x, y: palm.y }
+  lastPoint = { x: controlPt.x, y: controlPt.y }
 
   // —— 静态手势 ——
   const shape = detectHandShape(lm, { pinchThreshold: presets.pinchThreshold })
 
-  // 手势稳定化：连续若干帧同形态才切换
   if (shape === lastGestureStable) {
     gestureHoldMs += dt * 1000
   } else {
     lastGestureStable = shape
     gestureHoldMs = 0
     prevGestureAt = ts
+    if (shape !== 'pinch') pinchArmed = true
+    if (shape !== 'point') autoActivateMs = 0
   }
 
-  const stable = gestureHoldMs > 80
+  const stable = gestureHoldMs > 70
 
+  // ✊ 握拳 → 暂停
   if (stable && shape === 'fist') {
     if (state.value !== 'PAUSED') {
       state.value = 'PAUSED'
@@ -326,29 +435,30 @@ function controlLoop() {
       smoother.setTarget(0)
       setPanelMessage('✊ 已暂停')
       lastAction.value = 'pause'
+      pointer.visible = false
     }
     applyScroll(smoother.tick(dt * 60), dt)
     if (prefs.debug) {
-      debugInfo.palmX = round3(palm.x)
-      debugInfo.palmY = round3(palm.y)
+      debugInfo.palmX = round3(palm?.x || 0)
+      debugInfo.palmY = round3(palm?.y || 0)
       debugInfo.deltaX = round3(deltaX)
       debugInfo.deltaY = round3(deltaY)
-      debugInfo.velocityX = round3(velocity.x)
-      debugInfo.velocityY = round3(velocity.y)
+      debugInfo.velocityX = round3(controlVel.x)
+      debugInfo.velocityY = round3(controlVel.y)
       pushDebug(ts)
     }
     return
   }
 
-  // PAUSED：仅张开手掌恢复
+  // PAUSED：张开手或食指指向恢复
   if (state.value === 'PAUSED') {
-    if (stable && shape === 'open_palm') {
+    if (stable && (shape === 'open_palm' || shape === 'point')) {
       state.value = 'ACTIVE'
-      currentGesture.value = 'open_palm'
+      currentGesture.value = shape
       setPanelMessage('🟢 已恢复')
       lastAction.value = 'resume'
     } else {
-      currentGesture.value = shape === 'none' ? 'none' : shape
+      currentGesture.value = shape
       smoother.setTarget(0)
       applyScroll(smoother.tick(dt * 60), dt)
       if (prefs.debug) pushDebug(ts)
@@ -356,15 +466,20 @@ function controlLoop() {
     }
   }
 
-  // IDLE → ACTIVE：需要张开手掌激活，避免误触
+  // IDLE → ACTIVE：张开手掌 或 稳定指向 均可激活
   if (state.value === 'IDLE') {
-    if (stable && shape === 'open_palm') {
+    const canActivate =
+      (stable && (shape === 'open_palm' || shape === 'point')) ||
+      // 连续检测到手 + 指向 350ms 也激活，降低门槛
+      (shape === 'point' && (autoActivateMs += dt * 1000) > 350)
+
+    if (canActivate) {
       state.value = 'ACTIVE'
-      currentGesture.value = 'open_palm'
-      setPanelMessage('✋ 已激活')
+      currentGesture.value = shape
+      setPanelMessage(shape === 'point' ? '👆 指针已激活' : '✋ 已激活')
       lastAction.value = 'activate'
+      autoActivateMs = 0
     } else {
-      // IDLE 不响应移动/挥手
       smoother.setTarget(0)
       applyScroll(smoother.tick(dt * 60), dt)
       if (prefs.debug) {
@@ -376,29 +491,42 @@ function controlLoop() {
     }
   }
 
-  // ACTIVE / SCROLLING / COOLDOWN 下的逻辑
   currentGesture.value = shape
 
-  // 捏合
+  // —— 👆 / ✋ 时更新虚拟指针（食指为鼠标）——
+  if (shape === 'point' || shape === 'open_palm' || shape === 'unknown') {
+    if (indexTip) updatePointer(indexTip.x, indexTip.y)
+  }
+
+  // 🤏 捏合 → 点击（需松开后再捏）
   if (stable && shape === 'pinch') {
-    firePinch()
+    if (pinchArmed) {
+      pinchArmed = false
+      firePinch()
+    }
     smoother.setTarget(0)
     applyScroll(smoother.tick(dt * 60), dt)
     if (prefs.debug) {
-      debugInfo.palmX = round3(palm.x)
-      debugInfo.palmY = round3(palm.y)
+      debugInfo.palmX = round3(palm?.x || 0)
+      debugInfo.palmY = round3(palm?.y || 0)
       debugInfo.deltaX = round3(deltaX)
       debugInfo.deltaY = round3(deltaY)
-      debugInfo.velocityX = round3(velocity.x)
-      debugInfo.velocityY = round3(velocity.y)
+      debugInfo.velocityX = round3(controlVel.x)
+      debugInfo.velocityY = round3(controlVel.y)
       pushDebug(ts)
     }
     return
   }
 
-  // 左右快挥（离散 + cooldown）
-  if (state.value !== 'COOLDOWN') {
-    const swipe = detectSwipe(velocity, { swipeThreshold: presets.swipeThreshold })
+  // —— 模式区分 ——
+  // point：食指当鼠标，不滚动（避免指针和滚动打架）
+  // open_palm：连续滚动 + 左右挥
+  const isPointerMode = shape === 'point'
+  const isScrollMode = shape === 'open_palm'
+
+  // 左右快挥（张开手掌时，离散 + cooldown）
+  if (isScrollMode && state.value !== 'COOLDOWN') {
+    const swipe = detectSwipe(controlVel, { swipeThreshold: presets.swipeThreshold })
     if (swipe && performance.now() > cooldownUntil) {
       fireSwipe(swipe)
       smoother.setTarget(0)
@@ -408,40 +536,48 @@ function controlLoop() {
     }
   }
 
-  // —— 连续滚动（核心）——
-  // 用 Palm 速度（归一化单位/秒）实时映射滚动速度，隔空触摸屏手感
-  // 手向上（velocity.y < 0）→ 页面向下滚（window.scrollBy 正方向）
-  // 死区：微小手抖不滚；手停目标速度归零，平滑减速
-  const speedY = velocity.y
-  const inDeadZone = Math.abs(speedY) < presets.velocityDeadZone
+  // —— 连续滚动（仅张开手掌）——
+  // 手向上（velocity.y < 0）→ 页面向下滚
+  if (isScrollMode && (state.value === 'ACTIVE' || state.value === 'SCROLLING')) {
+    const speedY = controlVel.y
+    const inDeadZone = Math.abs(speedY) < presets.velocityDeadZone
 
-  if (!inDeadZone && (state.value === 'ACTIVE' || state.value === 'SCROLLING')) {
-    // units/s → px/s
-    const gain = 1600
-    const targetV = clampAbs(-speedY * gain * presets.velocityMultiplier, 56)
-    smoother.setTarget(targetV)
-    if (state.value !== 'SCROLLING') {
-      state.value = 'SCROLLING'
-      setPanelMessage(speedY < 0 ? '↑ 正在向下滚动' : '↓ 正在向上滚动')
+    if (!inDeadZone) {
+      const gain = 1600
+      const targetV = clampAbs(-speedY * gain * presets.velocityMultiplier, 56)
+      smoother.setTarget(targetV)
+      if (state.value !== 'SCROLLING') {
+        state.value = 'SCROLLING'
+        setPanelMessage(speedY < 0 ? '↑ 向下滚动' : '↓ 向上滚动')
+      }
+      lastAction.value = speedY < 0 ? 'scroll_down' : 'scroll_up'
+    } else {
+      smoother.setTarget(0)
+      if (state.value === 'SCROLLING') {
+        state.value = 'ACTIVE'
+        setPanelMessage('✋ 等待移动')
+      }
     }
-    lastAction.value = speedY < 0 ? 'scroll_down' : 'scroll_up'
   } else {
     smoother.setTarget(0)
     if (state.value === 'SCROLLING') {
       state.value = 'ACTIVE'
-      setPanelMessage('🟢 等待手势')
+    }
+    if (isPointerMode && state.value === 'ACTIVE') {
+      // 指针模式的状态提示
+      if (panelMessage.value !== '👆 指针模式') setPanelMessage('👆 指针模式')
     }
   }
 
   applyScroll(smoother.tick(dt * 60), dt)
 
   if (prefs.debug) {
-    debugInfo.palmX = round3(palm.x)
-    debugInfo.palmY = round3(palm.y)
+    debugInfo.palmX = round3(palm?.x || 0)
+    debugInfo.palmY = round3(palm?.y || 0)
     debugInfo.deltaX = round3(deltaX)
     debugInfo.deltaY = round3(deltaY)
-    debugInfo.velocityX = round3(velocity.x)
-    debugInfo.velocityY = round3(velocity.y)
+    debugInfo.velocityX = round3(controlVel.x)
+    debugInfo.velocityY = round3(controlVel.y)
     pushDebug(ts)
   }
 }
@@ -470,7 +606,6 @@ async function enable() {
   await tracking.start()
 
   if (!enabled.value) {
-    // 用户在启动过程中关掉了
     tracking.stop()
     return
   }
@@ -482,7 +617,6 @@ async function enable() {
     cancelControlLoop()
     controlLoop()
   } else {
-    // 权限拒绝 / 错误 → 自动回 OFF
     const msg = tracking.errorMessage.value || '手势控制启动失败'
     setPanelMessage(msg)
     enabled.value = false
@@ -513,7 +647,6 @@ function destroy() {
   tracking.destroy()
 }
 
-// 页面卸载时确保摄像头真正关闭
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', destroy)
   window.addEventListener('beforeunload', destroy)
@@ -564,6 +697,7 @@ export function useGestureControl() {
     setSensitivity,
     // 追踪数据
     tracking,
+    pointer,
     // debug
     debugInfo,
   }

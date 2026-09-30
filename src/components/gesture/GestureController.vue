@@ -103,10 +103,17 @@
         <GestureDebugPanel v-if="prefs.debug" :debug="debugInfo" />
 
         <div class="gc-foot">
-          <span class="gc-hint">✋ 激活 · ✋↑↓ 滚动 · ←→ 换页 · 🤏 选择 · ✊ 暂停</span>
+          <span class="gc-hint">👆 食指=鼠标 · 🤏=点击 · ✋=滚动 · ✊=暂停</span>
         </div>
       </div>
     </Transition>
+
+    <GestureVirtualCursor
+      :x="pointer.x"
+      :y="pointer.y"
+      :visible="pointer.visible && enabled"
+      :pressing="pointer.pressing"
+    />
   </div>
 </template>
 
@@ -116,6 +123,7 @@ import { Hand } from 'lucide-vue-next'
 import { useGestureControl } from '../../composables/useGestureControl'
 import GestureCameraPreview from './GestureCameraPreview.vue'
 import GestureDebugPanel from './GestureDebugPanel.vue'
+import GestureVirtualCursor from './GestureVirtualCursor.vue'
 
 const {
   enabled,
@@ -129,6 +137,7 @@ const {
   prefs,
   setSensitivity,
   tracking,
+  pointer,
   debugInfo,
 } = useGestureControl()
 

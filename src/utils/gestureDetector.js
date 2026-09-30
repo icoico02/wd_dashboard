@@ -1,6 +1,8 @@
 /**
  * 手势识别 —— 从 21 个 Hand Landmark 识别静态手势 + 左右快挥
  * 不依赖分类器训练，纯几何规则，全部本地计算
+ *
+ * v2：更稳的伸指判定 + 自适应捏合阈值；食指为控制点
  */
 
 import { dist2d } from './gestureSmoothing'
@@ -18,43 +20,70 @@ export const HAND_CONNECTIONS = [
 /** 用于 Palm Center 的 landmark 索引 */
 export const PALM_INDICES = [0, 5, 9, 13, 17]
 
+/** 控制点：食指指尖 */
+export const INDEX_TIP = 8
+export const THUMB_TIP = 4
+export const WRIST = 0
+export const MIDDLE_MCP = 9
+
 export const FINGER_TIPS = [4, 8, 12, 16, 20]
 export const FINGER_PIPS = [3, 6, 10, 14, 18]
 export const FINGER_MCPS = [2, 5, 9, 13, 17]
 
+/** 手部尺度（腕 → 中指根），用于自适应阈值 */
+export function handScale(lm) {
+  return Math.max(dist2d(lm[0], lm[9]), 0.05)
+}
+
 /**
- * 判断手指是否伸直
- * 以 MCP 为基准，指尖距离应明显大于近节指关节距离
+ * 手指是否伸直 —— 双条件投票，比单一距离更稳
+ * 1) 指尖-腕 距离 > 指关节-腕 距离
+ * 2) 指尖-根节 距离 明显大于 中节-根节 距离
  */
 function isFingerExtended(lm, mcp, pip, tip) {
-  const dTip = dist2d(lm[tip], lm[mcp])
-  const dPip = dist2d(lm[pip], lm[mcp])
-  return dTip > dPip * 1.12
+  const wrist = lm[0]
+  const dTipWrist = dist2d(lm[tip], wrist)
+  const dPipWrist = dist2d(lm[pip], wrist)
+  const dTipMcp = dist2d(lm[tip], lm[mcp])
+  const dPipMcp = dist2d(lm[pip], lm[mcp])
+
+  const byWrist = dTipWrist > dPipWrist * 1.08
+  const byMcp = dTipMcp > dPipMcp * 1.05
+  // 至少一条成立，且指尖没有明显贴近掌心
+  return (byWrist || byMcp) && dTipWrist > dPipWrist * 0.9
 }
 
 function isThumbExtended(lm) {
-  // 拇指指尖应远离食指根部（张开）或靠近掌心轴（收拢）
-  const dTipWrist = dist2d(lm[4], lm[0])
-  const dIpWrist = dist2d(lm[3], lm[0])
-  const dTipIndexMcp = dist2d(lm[4], lm[5])
-  const dIpIndexMcp = dist2d(lm[3], lm[5])
-  // 张开：指尖比 IP 更远；收拢：指尖靠近食指 MCP
-  const spread = dTipWrist > dIpWrist * 1.05 && dTipIndexMcp > dIpIndexMcp * 1.02
-  return spread
+  const scale = handScale(lm)
+  // 拇指尖相对食指根的张开距离
+  const spread = dist2d(lm[4], lm[5])
+  return spread > scale * 0.72
+}
+
+/** 捏合距离（拇指尖 4 ↔ 食指尖 8） */
+export function pinchDistance(lm) {
+  return dist2d(lm[4], lm[8])
+}
+
+/** 自适应捏合阈值（按手部尺度缩放） */
+export function adaptivePinchThreshold(lm, base = 0.07) {
+  const scale = handScale(lm)
+  // scale 约 0.15~0.35；base=0.07 对应中等手
+  return Math.max(base * 0.65, Math.min(base * 1.45, scale * 0.38 * (base / 0.07)))
 }
 
 /**
- * 静态手势
+ * 静态手势 —— 优先级：捏合 > 张开手掌 > 握拳 > 指点
  * @returns {'open_palm'|'fist'|'pinch'|'point'|'unknown'}
  */
 export function detectHandShape(landmarks, options = {}) {
   if (!landmarks || landmarks.length < 21) return 'unknown'
 
-  const pinchThreshold = options.pinchThreshold ?? 0.07
+  const basePinch = options.pinchThreshold ?? 0.07
+  const thr = adaptivePinchThreshold(landmarks, basePinch)
 
-  // 捏合优先：拇指尖 4 + 食指指尖 8
-  const pinchDist = dist2d(landmarks[4], landmarks[8])
-  if (pinchDist < pinchThreshold) {
+  // 🤏 捏合优先：拇指尖 4 + 食指指尖 8
+  if (pinchDistance(landmarks) < thr) {
     return 'pinch'
   }
 
@@ -62,26 +91,28 @@ export function detectHandShape(landmarks, options = {}) {
   const middleExt = isFingerExtended(landmarks, 9, 10, 12)
   const ringExt = isFingerExtended(landmarks, 13, 14, 16)
   const pinkyExt = isFingerExtended(landmarks, 17, 18, 20)
-  const thumbExt = isThumbExtended(landmarks)
 
   const extendedCount = [indexExt, middleExt, ringExt, pinkyExt].filter(Boolean).length
 
-  // ✋ 张开手掌：四指伸直（拇指可略收）
+  // ✋ 张开手掌：至少 3 指伸直（含食指+中指）
   if (extendedCount >= 3 && indexExt && middleExt) {
     return 'open_palm'
   }
 
-  // ✊ 握拳：四指弯曲
+  // ✊ 握拳：食指+中指都弯，且伸直指 ≤ 1
   if (extendedCount <= 1 && !indexExt && !middleExt) {
     return 'fist'
   }
 
-  // 👆 单指点选（可选识别）
+  // 👆 单指点选：仅食指伸直（中/无名/小指弯曲）
   if (indexExt && !middleExt && !ringExt && !pinkyExt) {
     return 'point'
   }
 
-  if (thumbExt && extendedCount === 0) return 'fist'
+  // 食指+中指（剪刀手）也当作 point 变体，便于控制
+  if (indexExt && middleExt && !ringExt && !pinkyExt && extendedCount === 2) {
+    return 'point'
+  }
 
   return 'unknown'
 }
@@ -90,17 +121,13 @@ export function detectHandShape(landmarks, options = {}) {
  * 左右快挥：基于水平速度 + 位移一致性
  * @returns {'left'|'right'|null}
  */
-export function detectSwipe(
-  velocity,
-  options = {},
-) {
-  const swipeThreshold = options.swipeThreshold ?? 0.14 // 归一化单位/秒
+export function detectSwipe(velocity, options = {}) {
+  const swipeThreshold = options.swipeThreshold ?? 0.8
   const vx = velocity?.x ?? 0
   const vy = velocity?.y ?? 0
 
-  // 水平分量需显著，且主导方向
   if (Math.abs(vx) < swipeThreshold) return null
-  if (Math.abs(vx) < Math.abs(vy) * 1.35) return null
+  if (Math.abs(vx) < Math.abs(vy) * 1.25) return null
 
   // 前置摄像头镜像后：x 减小 = 用户视角向左
   return vx < 0 ? 'left' : 'right'
@@ -110,8 +137,8 @@ export function detectSwipe(
  * 上下移动方向（用于状态显示）
  * @returns {'up'|'down'|null}
  */
-export function detectVerticalMove(velocityY, movementThreshold = 0.012) {
-  if (Math.abs(velocityY) < movementThreshold * 30) return null
+export function detectVerticalMove(velocityY, movementThreshold = 0.25) {
+  if (Math.abs(velocityY) < movementThreshold) return null
   return velocityY < 0 ? 'up' : 'down'
 }
 
@@ -137,10 +164,10 @@ export function readHandedness(result) {
 
 export const GESTURE_LABELS = {
   none: '—',
-  open_palm: '✋ 张开手',
+  open_palm: '✋ 张开手 · 滚动',
   fist: '✊ 暂停',
-  pinch: '🤏 捏合',
-  point: '👆 指点',
+  pinch: '🤏 捏合 · 点击',
+  point: '👆 食指 · 指针',
   unknown: '…',
 }
 
