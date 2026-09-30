@@ -108,7 +108,14 @@ export function useAuth() {
       password,
     })
 
-    return error ? '账号或密码错误' : ''
+    if (!error) return ''
+    const msg = (error.message || '').toLowerCase()
+    if (msg.includes('invalid login credentials')) return '账号或密码错误'
+    if (msg.includes('fetch') || error.name === 'AuthRetryableFetchError') {
+      return '网络连接失败，请检查网络后重试'
+    }
+    if (msg.includes('email not confirmed')) return '账号邮箱未验证，请联系管理员'
+    return `登录失败：${error.message}`
   }
 
   async function signUp(username, password, confirmation) {

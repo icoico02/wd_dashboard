@@ -258,7 +258,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Receipt, X } from 'lucide-vue-next'
 import AuthPanel from '../components/AuthPanel.vue'
 import FeatureShell from '../components/FeatureShell.vue'
@@ -293,6 +293,11 @@ const saving = ref(false)
 const current = ref('products')
 const orgName = ref('')
 const creatingOrg = ref(false)
+
+// 登录 / 注册成功后自动关闭弹窗（回到当前模块，数据切换由 useInventory 的 auth 监听处理）
+watch(authUser, (user) => {
+  if (user) loginOpen.value = false
+})
 
 const sections = computed(() => [
   { id: 'products', label: '商品库存' },
