@@ -103,7 +103,7 @@ export const groups = [
         icon: 'Boxes',
         accent: 'indigo',
         tags: ['业务', 'Vue'],
-        url: '#',
+        url: '/inventory',
         internalUrl: '',
         externalUrl: '',
         status: 'development',

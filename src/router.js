@@ -7,6 +7,7 @@ const router = createRouter({
     { path: '/', component: HomeView },
     { path: '/checkin', component: () => import('./views/CheckInView.vue') },
     { path: '/timer', component: () => import('./views/TimerView.vue') },
+    { path: '/inventory', component: () => import('./views/InventoryView.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior() {

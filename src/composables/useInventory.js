@@ -1,0 +1,222 @@
+/**
+ * 进销存统一数据层（组合式单例）
+ *
+ * - 登录用户：src/lib/inventoryApi.js → Supabase（组织 RLS 隔离，见 lib 内注释）
+ * - 游客：src/lib/inventoryLocal.js → localStorage 沙箱（可完整体验，数据不出本机）
+ * 两个后端的方法签名一一对应，页面组件不感知差异。
+ */
+import { computed, ref, watch } from 'vue'
+import { useAuth } from './useAuth'
+import * as api from '../lib/inventoryApi'
+import * as local from '../lib/inventoryLocal'
+
+const products = ref([])
+const orders = ref([])
+const movements = ref([])
+const loading = ref(false)
+const orgSetupNeeded = ref(false)
+const orgId = ref(null)
+const loaded = ref(false)
+
+const { authUser, isSupabaseConfigured } = useAuth()
+
+const isGuest = computed(() => !isSupabaseConfigured || !authUser.value)
+
+let initialized = false
+
+async function reload() {
+  loading.value = true
+  try {
+    if (isGuest.value) {
+      products.value = local.listProducts()
+      orders.value = local.listOrders()
+      movements.value = local.listMovements()
+      orgSetupNeeded.value = false
+      loaded.value = true
+      return
+    }
+    const oid = await api.getOrgId()
+    orgId.value = oid
+    if (!oid) {
+      orgSetupNeeded.value = true
+      products.value = []
+      orders.value = []
+      movements.value = []
+      loaded.value = true
+      return
+    }
+    orgSetupNeeded.value = false
+    const [p, o, m] = await Promise.all([api.listProducts(), api.listOrders(), api.listMovements()])
+    products.value = p.map(mapProduct)
+    const items = await api.listOrderItems(o.map((x) => x.id))
+    orders.value = o.map((order) => ({
+      ...mapOrder(order),
+      items: items
+        .filter((i) => i.order_id === order.id)
+        .map((i) => ({
+          id: i.id,
+          productId: i.product_id,
+          productName: i.product_name,
+          sku: i.sku,
+          quantity: i.quantity,
+          unitPrice: Number(i.unit_price || 0),
+          lineTotal: Number(i.line_total || 0),
+        })),
+    }))
+    movements.value = m.map(mapMovement)
+    loaded.value = true
+  } finally {
+    loading.value = false
+  }
+}
+
+function mapProduct(p) {
+  return {
+    id: p.id,
+    name: p.name,
+    sku: p.sku,
+    category: p.category || '未分类',
+    specification: p.specification || null,
+    salePrice: Number(p.sale_price || 0),
+    costPrice: Number(p.cost_price || 0),
+    stock: p.stock ?? 0,
+    lowStockThreshold: p.low_stock_threshold ?? 0,
+    createdAt: p.created_at,
+  }
+}
+
+function mapMovement(m) {
+  return {
+    id: m.id,
+    type: m.operation_type,
+    quantity: m.quantity,
+    unitCost: Number(m.unit_cost || 0),
+    unitPrice: Number(m.unit_price || 0),
+    totalAmount: Number(m.total_amount || 0),
+    supplier: m.supplier,
+    note: m.note,
+    docNo: m.business_no,
+    productName: m.inventory_products?.name || null,
+    createdAt: m.created_at,
+  }
+}
+
+function mapOrder(o) {
+  return {
+    id: o.id,
+    orderNo: o.order_no,
+    status: o.order_status,
+    fulfillmentStatus: o.fulfillment_status,
+    paymentMethod: o.payment_method,
+    subtotal: Number(o.subtotal || 0),
+    discount: Number(o.discount || 0),
+    totalAmount: Number(o.total_amount || 0),
+    totalCost: Number(o.total_cost || 0),
+    totalProfit: Number(o.total_profit || 0),
+    note: o.note,
+    createdAt: o.created_at,
+  }
+}
+
+/* ------------------------------------ 对外操作 ------------------------------------ */
+async function createOrganization(name) {
+  await api.createOrganization(name)
+  orgId.value = await api.getOrgId()
+  orgSetupNeeded.value = false
+  await reload()
+}
+
+async function saveProduct(payload, productId = null) {
+  if (isGuest.value) local.saveProduct(payload, productId)
+  else await api.saveProduct(payload, productId)
+  await reload()
+}
+
+async function deleteProduct(id) {
+  if (isGuest.value) local.deleteProduct(id)
+  else await api.deleteProduct(id)
+  await reload()
+}
+
+async function receiveProduct(payload) {
+  if (isGuest.value) local.receiveProduct(payload)
+  else await api.receiveProduct(payload)
+  await reload()
+}
+
+async function stockOutProduct(payload) {
+  if (isGuest.value) local.stockOutProduct(payload)
+  else await api.stockOutProduct(payload)
+  await reload()
+}
+
+async function createSale(payload) {
+  let orderId
+  if (isGuest.value) orderId = local.createOrder(payload)
+  else orderId = await api.createOrder(payload)
+  await reload()
+  return orderId
+}
+
+async function confirmOrder(orderId) {
+  if (isGuest.value) local.confirmOrder(orderId)
+  else await api.confirmOrder(orderId)
+  await reload()
+}
+
+export function useInventory() {
+  if (!initialized) {
+    initialized = true
+    watch(authUser, () => {
+      loaded.value = false
+      reload()
+    })
+    reload()
+  }
+
+  return {
+    products,
+    orders,
+    movements,
+    loading,
+    loaded,
+    isGuest,
+    orgSetupNeeded,
+    createOrganization,
+    saveProduct,
+    deleteProduct,
+    receiveProduct,
+    stockOutProduct,
+    createSale,
+    confirmOrder,
+    reload,
+  }
+}
+
+const PAYMENT_LABELS = { cash: '现金', wechat: '微信支付', alipay: '支付宝', other: '其他' }
+const MOVEMENT_LABELS = {
+  inbound: '入库',
+  sale: '销售',
+  normal_outbound: '出库',
+  loss: '损耗',
+  adjustment: '调整',
+  sale_return: '销售退货',
+  purchase_return: '采购退货',
+}
+
+export function paymentLabel(v) {
+  return PAYMENT_LABELS[v] || v
+}
+
+export function movementLabel(v) {
+  return MOVEMENT_LABELS[v] || v
+}
+
+export function fmtMoney(n) {
+  return `¥${Number(n || 0).toFixed(2)}`
+}
+
+export function fmtDateTime(v) {
+  if (!v) return '--'
+  return new Date(v).toLocaleString('zh-CN', { hour12: false })
+}
