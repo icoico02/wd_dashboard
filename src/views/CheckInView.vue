@@ -60,9 +60,41 @@ VITE_SUPABASE_PUBLISHABLE_KEY=你的匿名密钥</pre>
       <section class="history">
         <div class="history-head">
           <h2 class="section-title">签到记录</h2>
-          <button type="button" class="makeup-btn" @click="openMakeUpPanel">
-            <CalendarPlus :size="15" aria-hidden="true" />补卡
-          </button>
+          <div class="history-tools">
+            <button
+              type="button"
+              class="tool-btn"
+              title="导出 CSV"
+              aria-label="导出 CSV"
+              :disabled="!historyList.length"
+              @click="doExportCsv"
+            >
+              <FileText :size="14" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="tool-btn"
+              title="导出 Excel"
+              aria-label="导出 Excel"
+              :disabled="!historyList.length"
+              @click="doExportExcel"
+            >
+              <FileSpreadsheet :size="14" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="tool-btn"
+              title="导出 PDF（打印窗口中选「另存为 PDF」）"
+              aria-label="导出 PDF"
+              :disabled="!historyList.length"
+              @click="doExportPdf"
+            >
+              <FileDown :size="14" aria-hidden="true" />
+            </button>
+            <button type="button" class="makeup-btn" @click="openMakeUpPanel">
+              <CalendarPlus :size="15" aria-hidden="true" />补卡
+            </button>
+          </div>
         </div>
 
         <div v-if="recordsLoading" class="history-empty glass-subtle">
@@ -157,12 +189,23 @@ VITE_SUPABASE_PUBLISHABLE_KEY=你的匿名密钥</pre>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { CalendarPlus, LogIn, LogOut, Pencil, Settings, Trash2 } from 'lucide-vue-next'
+import {
+  CalendarPlus,
+  FileDown,
+  FileSpreadsheet,
+  FileText,
+  LogIn,
+  LogOut,
+  Pencil,
+  Settings,
+  Trash2,
+} from 'lucide-vue-next'
 import AuthPanel from '../components/AuthPanel.vue'
 import FeatureShell from '../components/FeatureShell.vue'
 import GlassDialog from '../components/GlassDialog.vue'
 import { useAuth } from '../composables/useAuth'
 import { useToast } from '../composables/useToast'
+import { exportCsv, exportExcel, printTable } from '../lib/tableExport'
 import { supabase } from '../lib/supabase'
 
 const { authLoading, authUser, isConfigured, signOut } = useAuth()
@@ -515,6 +558,63 @@ async function confirmDeleteRecord() {
   await loadRecords()
 }
 
+/* --------------------------------- 导出 CSV / Excel / PDF --------------------------------- */
+const EXPORT_HEAD = ['日期', '星期', '上班时间', '下班时间', '工时', '状态']
+
+function buildExportRows() {
+  return historyList.value.map((item) => {
+    const isToday = item.date === todayKey.value
+    const status = item.endTime ? '已完成' : isToday ? '进行中' : '缺下班卡'
+    const duration = item.endTime
+      ? formatWorkDuration(item)
+      : isToday
+        ? '进行中'
+        : '缺下班卡'
+    return [
+      item.date,
+      formatWeekday(item.date),
+      formatAttendanceTime(item.startTime),
+      formatAttendanceTime(item.endTime),
+      duration,
+      status,
+    ]
+  })
+}
+
+function exportBaseName() {
+  return `出勤记录_${todayKey.value.replace(/-/g, '')}`
+}
+
+function doExportCsv() {
+  try {
+    exportCsv(EXPORT_HEAD, buildExportRows(), exportBaseName())
+    showToast('CSV 已导出')
+  } catch (e) {
+    console.error(e)
+    showToast('CSV 导出失败，请重试')
+  }
+}
+
+async function doExportExcel() {
+  try {
+    await exportExcel(EXPORT_HEAD, buildExportRows(), exportBaseName(), '出勤记录')
+    showToast('Excel 已导出')
+  } catch (e) {
+    console.error(e)
+    showToast('Excel 导出失败，请重试')
+  }
+}
+
+function doExportPdf() {
+  printTable({
+    title: '出勤记录',
+    subtitle: `共 ${historyList.value.length} 条 · 导出于 ${new Date().toLocaleString('zh-CN', { hour12: false })}`,
+    head: EXPORT_HEAD,
+    rows: buildExportRows(),
+  })
+  showToast('已打开打印窗口，选择「另存为 PDF」即可保存')
+}
+
 async function onSignOut() {
   await signOut()
 }
@@ -695,7 +795,43 @@ html[data-theme="dark"] .hero-status.done { color: #7db8ff; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
+}
+
+.history-tools {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.tool-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur-subtle)) saturate(140%);
+  backdrop-filter: blur(var(--glass-blur-subtle)) saturate(140%);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, transform 120ms var(--ease-glass), opacity 160ms ease;
+}
+
+.tool-btn:hover:not(:disabled) {
+  background: var(--glass-bg-hover);
+  color: var(--accent);
+}
+
+.tool-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.tool-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .section-title {
