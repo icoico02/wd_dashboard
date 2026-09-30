@@ -164,9 +164,9 @@ export function readHandedness(result) {
 
 export const GESTURE_LABELS = {
   none: '—',
-  open_palm: '✋ 张开手 · 滚动',
+  open_palm: '✋ 张开手 · 换页',
   fist: '✊ 暂停',
-  pinch: '🤏 捏合 · 点击',
+  pinch: '🤏 捏合 · 拖拽',
   point: '👆 食指 · 指针',
   unknown: '…',
 }

@@ -103,7 +103,7 @@
         <GestureDebugPanel v-if="prefs.debug" :debug="debugInfo" />
 
         <div class="gc-foot">
-          <span class="gc-hint">👆 食指=鼠标 · 🤏=点击 · ✋=滚动 · ✊=暂停</span>
+          <span class="gc-hint">👆=指针 · 🤏轻点=点击 · 🤏拖=滚动 · ✋=换页 · ✊=暂停</span>
         </div>
       </div>
     </Transition>

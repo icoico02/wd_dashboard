@@ -24,6 +24,8 @@ import {
 import {
   detectHandShape,
   detectSwipe,
+  pinchDistance,
+  adaptivePinchThreshold,
   GESTURE_LABELS,
   STATE_LABELS,
 } from '../utils/gestureDetector'
@@ -122,6 +124,14 @@ let cooldownTimer = 0
 let pinchArmed = true // 捏合需松开后再捏，防连点
 let autoActivateMs = 0
 
+// 捏合拖拽滚动（grab-and-drag）
+let pinchHolding = false
+let pinchStartAt = 0
+let pinchLastX = 0
+let pinchLastY = 0
+let pinchTravel = 0
+let pinchLastVelY = 0
+
 function persistPrefs() {
   try {
     localStorage.setItem(
@@ -161,6 +171,7 @@ function clearControlState() {
   prevGestureAt = 0
   pinchArmed = true
   autoActivateMs = 0
+  endPinchHold(false)
   smoother.reset()
   if (cooldownTimer) {
     clearTimeout(cooldownTimer)
@@ -334,8 +345,79 @@ function firePinch() {
   setPanelMessage(clicked ? '🤏 已点击' : handled ? '🤏 捏合' : '🤏 捏合')
   pointer.pressing = true
   window.setTimeout(() => {
-    pointer.pressing = false
+    if (!pinchHolding) pointer.pressing = false
   }, 120)
+}
+
+/** 开始捏合抓住页面 */
+function beginPinchHold(x, y, ts) {
+  pinchHolding = true
+  pinchStartAt = ts
+  pinchLastX = x
+  pinchLastY = y
+  pinchTravel = 0
+  pinchLastVelY = 0
+  pointer.pressing = true
+  lastAction.value = 'pinch_grab'
+  setPanelMessage('🤏 拖动中')
+}
+
+/**
+ * 结束捏合：位移小 → 点击；位移大 → 视为拖拽滚动
+ * @param {boolean} allowClick
+ */
+function endPinchHold(allowClick = true) {
+  if (!pinchHolding) return
+  const travel = pinchTravel
+  const heldMs = performance.now() - pinchStartAt
+  pinchHolding = false
+  pointer.pressing = false
+
+  // 松手后少量惯性
+  if (Math.abs(pinchLastVelY) > 0.08) {
+    smoother.setTarget(clampAbs(-pinchLastVelY * 900, 40))
+    // 惯性在下一帧 tick 中自然衰减
+    window.setTimeout(() => smoother.setTarget(0), 80)
+  } else {
+    smoother.setTarget(0)
+  }
+
+  // 轻点（几乎没位移、按得短）→ 点击
+  const isTap = travel < 0.022 && heldMs < 520
+  if (allowClick && isTap) {
+    firePinch()
+    return
+  }
+
+  if (travel >= 0.022) {
+    lastAction.value = 'pinch_scroll'
+    setPanelMessage('🤏 已拖动')
+  }
+}
+
+/** 捏合拖拽：把手指位移映射为页面滚动（拖内容） */
+function applyPinchDrag(x, y, dt) {
+  const dx = x - pinchLastX
+  const dy = y - pinchLastY
+  pinchLastX = x
+  pinchLastY = y
+  pinchTravel += Math.hypot(dx, dy)
+
+  // 手指上移（dy < 0）→ 内容跟着上移 → 页面向下滚（scrollBy 正方向）
+  const gain = 1.35
+  const scrollPx = -dy * window.innerHeight * gain
+  if (Math.abs(scrollPx) >= 0.35) {
+    window.scrollBy(0, scrollPx)
+    state.value = 'SCROLLING'
+    lastAction.value = 'pinch_scroll'
+    if (dy < 0) setPanelMessage('🤏 向下滚动')
+    else setPanelMessage('🤏 向上滚动')
+  }
+
+  // 供松手惯性用（归一化单位/秒）
+  if (dt > 0) {
+    pinchLastVelY = dy / dt
+  }
 }
 
 function pushDebug(ts) {
@@ -363,6 +445,7 @@ function controlLoop() {
 
   // 无手 → 逐渐回到 IDLE，滚动自然减速，指针隐藏
   if (!tracking.hasHand.value || tracking.confidence.value < presets.minConfidence) {
+    if (pinchHolding) endPinchHold(false)
     if (lastHandSeenAt.value && ts - lastHandSeenAt.value > presets.handLostMs) {
       if (state.value !== 'IDLE') {
         state.value = 'IDLE'
@@ -411,8 +494,19 @@ function controlLoop() {
   }
   lastPoint = { x: controlPt.x, y: controlPt.y }
 
-  // —— 静态手势 ——
-  const shape = detectHandShape(lm, { pinchThreshold: presets.pinchThreshold })
+  // —— 静态手势 + 捏合迟滞（抓住后不轻易松开）——
+  let shape = detectHandShape(lm, { pinchThreshold: presets.pinchThreshold })
+  const pDist = pinchDistance(lm)
+  const enterThr = adaptivePinchThreshold(lm, presets.pinchThreshold)
+  const exitThr = enterThr * 1.55
+
+  if (pinchHolding) {
+    // 抓住中：距离略大也不松开
+    if (pDist < exitThr) shape = 'pinch'
+    else if (shape === 'unknown') shape = 'point'
+  } else if (pDist < enterThr) {
+    shape = 'pinch'
+  }
 
   if (shape === lastGestureStable) {
     gestureHoldMs += dt * 1000
@@ -420,14 +514,14 @@ function controlLoop() {
     lastGestureStable = shape
     gestureHoldMs = 0
     prevGestureAt = ts
-    if (shape !== 'pinch') pinchArmed = true
     if (shape !== 'point') autoActivateMs = 0
   }
 
-  const stable = gestureHoldMs > 70
+  const stable = gestureHoldMs > 50 || (pinchHolding && shape === 'pinch')
 
   // ✊ 握拳 → 暂停
   if (stable && shape === 'fist') {
+    if (pinchHolding) endPinchHold(false)
     if (state.value !== 'PAUSED') {
       state.value = 'PAUSED'
       currentGesture.value = 'fist'
@@ -498,14 +592,21 @@ function controlLoop() {
     if (indexTip) updatePointer(indexTip.x, indexTip.y)
   }
 
-  // 🤏 捏合 → 点击（需松开后再捏）
-  if (stable && shape === 'pinch') {
-    if (pinchArmed) {
-      pinchArmed = false
-      firePinch()
+  // —— 🤏 捏合：抓住拖拽滚动；轻点才点击 ——
+  if (shape === 'pinch') {
+    if (!pinchHolding && stable) {
+      beginPinchHold(controlPt.x, controlPt.y, ts)
+      // 捏合时指针跟到捏合点
+      if (indexTip) updatePointer(indexTip.x, indexTip.y)
+    } else if (pinchHolding) {
+      if (indexTip) updatePointer(indexTip.x, indexTip.y)
+      applyPinchDrag(controlPt.x, controlPt.y, dt)
     }
+
+    // 拖拽中不走 smoother，直接位移映射
     smoother.setTarget(0)
     applyScroll(smoother.tick(dt * 60), dt)
+
     if (prefs.debug) {
       debugInfo.palmX = round3(palm?.x || 0)
       debugInfo.palmY = round3(palm?.y || 0)
@@ -518,9 +619,16 @@ function controlLoop() {
     return
   }
 
+  // 刚松开捏合
+  if (pinchHolding) {
+    endPinchHold(true)
+    if (prefs.debug) pushDebug(ts)
+    // 落到后续逻辑处理惯性/滚动
+  }
+
   // —— 模式区分 ——
-  // point：食指当鼠标，不滚动（避免指针和滚动打架）
-  // open_palm：连续滚动 + 左右挥
+  // point：食指当鼠标
+  // open_palm：左右挥换页（纵向改由捏合拖拽）
   const isPointerMode = shape === 'point'
   const isScrollMode = shape === 'open_palm'
 
@@ -536,37 +644,33 @@ function controlLoop() {
     }
   }
 
-  // —— 连续滚动（仅张开手掌）——
-  // 手向上（velocity.y < 0）→ 页面向下滚
-  if (isScrollMode && (state.value === 'ACTIVE' || state.value === 'SCROLLING')) {
-    const speedY = controlVel.y
-    const inDeadZone = Math.abs(speedY) < presets.velocityDeadZone
-
-    if (!inDeadZone) {
-      const gain = 1600
-      const targetV = clampAbs(-speedY * gain * presets.velocityMultiplier, 56)
-      smoother.setTarget(targetV)
-      if (state.value !== 'SCROLLING') {
-        state.value = 'SCROLLING'
-        setPanelMessage(speedY < 0 ? '↑ 向下滚动' : '↓ 向上滚动')
-      }
-      lastAction.value = speedY < 0 ? 'scroll_down' : 'scroll_up'
-    } else {
-      smoother.setTarget(0)
-      if (state.value === 'SCROLLING') {
-        state.value = 'ACTIVE'
-        setPanelMessage('✋ 等待移动')
-      }
-    }
-  } else {
-    smoother.setTarget(0)
-    if (state.value === 'SCROLLING') {
+  // 非拖拽：保留松手惯性，滚完自动回 ACTIVE
+  if (state.value === 'SCROLLING' && !pinchHolding) {
+    const v = smoother.tick(dt * 60)
+    applyScroll(v, dt)
+    if (Math.abs(v) < 0.6 && Math.abs(smoother.target) < 0.6) {
+      smoother.reset()
       state.value = 'ACTIVE'
+      setPanelMessage('🟢 等待手势')
     }
-    if (isPointerMode && state.value === 'ACTIVE') {
-      // 指针模式的状态提示
-      if (panelMessage.value !== '👆 指针模式') setPanelMessage('👆 指针模式')
+    if (prefs.debug) {
+      debugInfo.palmX = round3(palm?.x || 0)
+      debugInfo.palmY = round3(palm?.y || 0)
+      debugInfo.deltaX = round3(deltaX)
+      debugInfo.deltaY = round3(deltaY)
+      debugInfo.velocityX = round3(controlVel.x)
+      debugInfo.velocityY = round3(controlVel.y)
+      pushDebug(ts)
     }
+    return
+  }
+
+  smoother.setTarget(0)
+  if (state.value === 'SCROLLING') {
+    state.value = 'ACTIVE'
+  }
+  if (isPointerMode && state.value === 'ACTIVE') {
+    if (panelMessage.value !== '👆 指针模式') setPanelMessage('👆 指针模式')
   }
 
   applyScroll(smoother.tick(dt * 60), dt)
